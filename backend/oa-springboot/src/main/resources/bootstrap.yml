@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: oa-management-service
+  cloud:
+    nacos:
+      # Nacos服务注册发现配置
+      discovery:
+        server-addr: localhost:8848
+        namespace: public
+        group: DEFAULT_GROUP
+      # Nacos配置中心配置
+      config:
+        server-addr: localhost:8848
+        namespace: public
+        group: DEFAULT_GROUP
+        file-extension: yml
+        # 动态刷新配置
+        refresh-enabled: true
+        # 扩展配置（共享配置）
+        shared-configs:
+          - data-id: common-config.yml
+            group: DEFAULT_GROUP
+            refresh: true
+
+  # 配置文件导入（从Nacos拉取）
+  config:
+    import:
+      - optional:nacos:${spring.application.name}.yml?refresh=true
+      - optional:nacos:common-config.yml?refresh=true
