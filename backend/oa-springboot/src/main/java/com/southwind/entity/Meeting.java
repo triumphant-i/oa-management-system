@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import lombok.Data;
@@ -16,6 +17,7 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = false)
 @TableName("t_meeting")
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Meeting implements Serializable {
 
   private static final long serialVersionUID=1L;
@@ -127,6 +129,14 @@ public class Meeting implements Serializable {
     return participantIds;
   }
 
+  public String getParticipants() {
+    return participants;
+  }
+
+  public String getRemark() {
+    return remark;
+  }
+
   public LocalDateTime getStartTime() {
     return startTime;
   }
@@ -166,6 +176,14 @@ public class Meeting implements Serializable {
 
   public void setParticipantIds(String participantIds) {
     this.participantIds = participantIds;
+  }
+
+  public void setParticipants(String participants) {
+    this.participants = participants;
+  }
+
+  public void setRemark(String remark) {
+    this.remark = remark;
   }
 
   public void setStartTime(LocalDateTime startTime) {

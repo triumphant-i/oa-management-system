@@ -348,11 +348,18 @@ const handleScroll = () => {
 const allTimeSlots = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00']
 
 const getTimeSlots = (roomId) => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const selectedDate = new Date(currentDate.value)
+  selectedDate.setHours(0, 0, 0, 0)
+  const isToday = today.getTime() === selectedDate.getTime()
+  
   const currentHour = now.value.getHours() + now.value.getMinutes() / 60
   const roomBookingsData = roomBookings.value.filter(b => b.roomId === roomId)
   
   return allTimeSlots
     .filter(time => {
+      if (!isToday) return true
       const hour = parseInt(time.split(':')[0]) + parseInt(time.split(':')[1]) / 60
       return hour > currentHour
     })
@@ -369,6 +376,49 @@ const getTimeSlots = (roomId) => {
 
 const getAvailableSlots = (roomId) => {
   return getTimeSlots(roomId).filter(s => s.status === '空闲')
+}
+
+// =============================================
+// ===== 时间选择列（修改预订用） =====
+// =============================================
+const timeColumns = [
+  { text: '08:00', value: '08:00' },
+  { text: '08:30', value: '08:30' },
+  { text: '09:00', value: '09:00' },
+  { text: '09:30', value: '09:30' },
+  { text: '10:00', value: '10:00' },
+  { text: '10:30', value: '10:30' },
+  { text: '11:00', value: '11:00' },
+  { text: '11:30', value: '11:30' },
+  { text: '12:00', value: '12:00' },
+  { text: '12:30', value: '12:30' },
+  { text: '13:00', value: '13:00' },
+  { text: '13:30', value: '13:30' },
+  { text: '14:00', value: '14:00' },
+  { text: '14:30', value: '14:30' },
+  { text: '15:00', value: '15:00' },
+  { text: '15:30', value: '15:30' },
+  { text: '16:00', value: '16:00' },
+  { text: '16:30', value: '16:30' },
+  { text: '17:00', value: '17:00' },
+  { text: '17:30', value: '17:30' },
+  { text: '18:00', value: '18:00' }
+]
+
+// 点击时间槽跳转预订
+const selectTimeSlot = (room, slot) => {
+  if (slot.status === '占用') {
+    showToast('该时段已被预订')
+    return
+  }
+  router.push({
+    path: `/meeting/reserve/${room.id}`,
+    query: {
+      roomName: room.name,
+      date: currentDate.value,
+      startTime: slot.time
+    }
+  })
 }
 
 // =============================================
@@ -424,11 +474,28 @@ const loadMyBookings = async () => {
   }
 }
 
+const loadAllRoomBookings = async () => {
+  try {
+    const promises = roomList.value.map(room => getRoomMeetings(room.id))
+    const results = await Promise.all(promises)
+    const allBookings = []
+    results.forEach(res => {
+      if (res.code === 0 && res.data) {
+        allBookings.push(...res.data)
+      }
+    })
+    roomBookings.value = allBookings
+  } catch (error) {
+    console.error('加载会议室预订失败:', error)
+  }
+}
+
 const loadRoomBookings = async (roomId) => {
   try {
     const res = await getRoomMeetings(roomId)
     if (res.code === 0) {
-      roomBookings.value = res.data || []
+      const others = roomBookings.value.filter(b => b.roomId !== roomId)
+      roomBookings.value = [...others, ...(res.data || [])]
     }
   } catch (error) {
     console.error('加载会议室预订失败:', error)
@@ -461,10 +528,11 @@ const minDate = computed(() => {
   return d
 })
 
-const onConfirmDate = (value) => {
+const onConfirmDate = async (value) => {
   const date = new Date(value)
   currentDate.value = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
   showCalendar.value = false
+  await loadAllRoomBookings()
 }
 
 // =============================================
@@ -472,9 +540,8 @@ const onConfirmDate = (value) => {
 // =============================================
 const goReserve = (room) => {
   router.push({
-    path: '/meeting/reserve',
+    path: `/meeting/reserve/${room.id}`,
     query: {
-      roomId: room.id,
       roomName: room.name,
       date: currentDate.value || new Date().toISOString().split('T')[0]
     }
@@ -645,9 +712,7 @@ onMounted(async () => {
   loading.value = true
   await loadRoomList()
   await loadMyBookings()
-  if (roomList.value.length > 0) {
-    await loadRoomBookings(roomList.value[0].id)
-  }
+  await loadAllRoomBookings()
   loading.value = false
   
   timer = setInterval(updateCurrentTime, 60000)

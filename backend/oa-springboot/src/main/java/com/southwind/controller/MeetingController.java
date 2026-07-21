@@ -2,9 +2,11 @@ package com.southwind.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.southwind.entity.Employee;
 import com.southwind.entity.Meeting;
 import com.southwind.entity.MeetingRoom;
 import com.southwind.entity.Message;
+import com.southwind.service.EmployeeService;
 import com.southwind.service.MeetingRoomService;
 import com.southwind.service.MeetingService;
 import com.southwind.service.MessageService;
@@ -35,6 +37,9 @@ public class MeetingController {
 
     @Autowired
     private MessageService messageService;
+
+    @Autowired
+    private EmployeeService employeeService;
 
     /**
      * 预约会议
@@ -67,6 +72,7 @@ public class MeetingController {
         }
 
         meeting.setStatus("已预约");
+        meeting.setRoomName(room.getName());
         meeting.setCreateTime(LocalDateTime.now());
         boolean save = meetingService.save(meeting);
         if (!save) return ResultVOUtil.fail("预约失败");
@@ -77,17 +83,19 @@ public class MeetingController {
             String[] ids = participantIds.split(",");
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
             String timeStr = meeting.getStartTime().format(formatter) + " - " + meeting.getEndTime().format(formatter);
-            
+
             for (String id : ids) {
                 try {
                     Integer receiverId = Integer.parseInt(id.trim());
+                    Employee emp = employeeService.getById(receiverId);
+                    String receiverName = emp != null ? emp.getName() : "参会人";
                     Message message = new Message();
                     message.setSenderId(meeting.getOrganizerId());
                     message.setSenderName(meeting.getOrganizerName());
                     message.setReceiverId(receiverId);
-                    message.setReceiverName("参会人");
+                    message.setReceiverName(receiverName);
                     message.setTitle("会议通知");
-                    message.setContent(String.format("您被邀请参加会议【%s】，时间：%s，地点：%s。请准时参加。", 
+                    message.setContent(String.format("您被邀请参加会议【%s】，时间：%s，地点：%s。请准时参加。",
                         meeting.getTitle(), timeStr, room.getName()));
                     message.setMsgType("MEETING");
                     message.setIsRead(0);
@@ -157,8 +165,10 @@ public class MeetingController {
      */
     @PutMapping("/cancel/{id}")
     public ResultVO cancel(@PathVariable("id") Integer id) {
-        Meeting meeting = new Meeting();
-        meeting.setId(id);
+        Meeting meeting = meetingService.getById(id);
+        if (meeting == null) {
+            return ResultVOUtil.fail("会议不存在");
+        }
         meeting.setStatus("已取消");
         meeting.setUpdateTime(LocalDateTime.now());
 
@@ -185,8 +195,22 @@ public class MeetingController {
      */
     @PutMapping("/update")
     public ResultVO update(@RequestBody Meeting meeting) {
-        meeting.setUpdateTime(LocalDateTime.now());
-        boolean update = meetingService.updateById(meeting);
+        // 获取原会议记录，确保有完整数据
+        Meeting existing = meetingService.getById(meeting.getId());
+        if (existing == null) {
+            return ResultVOUtil.fail("会议不存在");
+        }
+        // 合并字段：前端提供的字段覆盖原记录
+        if (meeting.getTitle() != null) existing.setTitle(meeting.getTitle());
+        if (meeting.getStartTime() != null) existing.setStartTime(meeting.getStartTime());
+        if (meeting.getEndTime() != null) existing.setEndTime(meeting.getEndTime());
+        if (meeting.getParticipants() != null) existing.setParticipants(meeting.getParticipants());
+        if (meeting.getParticipantIds() != null) existing.setParticipantIds(meeting.getParticipantIds());
+        if (meeting.getStatus() != null) existing.setStatus(meeting.getStatus());
+        if (meeting.getRemark() != null) existing.setRemark(meeting.getRemark());
+        existing.setUpdateTime(LocalDateTime.now());
+        
+        boolean update = meetingService.updateById(existing);
         if (!update) return ResultVOUtil.fail("更新失败");
         return ResultVOUtil.success(null);
     }

@@ -175,9 +175,14 @@
       </van-form>
     </van-popup>
 
-    <van-popup v-model:show="showCorrectionDatePicker" position="bottom" round style="height: 80%;">
-      <van-calendar type="date" @confirm="onConfirmCorrectionDate" @cancel="showCorrectionDatePicker = false" :max-date="maxDate" />
-    </van-popup>
+    <van-calendar 
+      :show="showCorrectionDatePicker"
+      type="date" 
+      @confirm="onConfirmCorrectionDate" 
+      @close="showCorrectionDatePicker = false"
+      :max-date="maxDate"
+      title="选择补卡日期"
+    />
 
     <van-popup v-model:show="showCorrectionTimePicker" position="bottom" round>
       <van-picker :columns="timeColumns" @confirm="onConfirmCorrectionTime" @cancel="showCorrectionTimePicker = false" title="选择时间" />

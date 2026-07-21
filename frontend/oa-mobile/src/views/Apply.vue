@@ -130,8 +130,10 @@
             <van-field
               v-model="formData.expenseType"
               label="报销类型"
-              placeholder="请输入报销类型"
-              :rules="[{ required: true, message: '请输入报销类型' }]"
+              placeholder="请选择"
+              is-link
+              @click="showExpenseType = true"
+              :rules="[{ required: true, message: '请选择报销类型' }]"
             />
             <van-field
               v-model="formData.amount"
@@ -277,6 +279,10 @@
       <van-picker :columns="cardTypeColumns" @confirm="onConfirmCardType" @cancel="showCardType = false" title="选择补卡类型" />
     </van-popup>
 
+    <van-popup v-model:show="showExpenseType" position="bottom" round>
+      <van-picker :columns="expenseTypeColumns" @confirm="onConfirmExpenseType" @cancel="showExpenseType = false" title="选择报销类型" />
+    </van-popup>
+
     <van-calendar 
       v-model="startDateValue"
       type="date" 
@@ -346,6 +352,7 @@ const formData = reactive({
 
 const showLeaveType = ref(false)
 const showCardType = ref(false)
+const showExpenseType = ref(false)
 const showStartDate = ref(false)
 const showEndDate = ref(false)
 const showStartTimePicker = ref(false)
@@ -382,6 +389,15 @@ const cardTypeColumns = [
   { text: '迟到补卡', value: '迟到补卡' },
   { text: '早退补卡', value: '早退补卡' },
   { text: '漏签补卡', value: '漏签补卡' }
+]
+
+const expenseTypeColumns = [
+  { text: '交通费', value: '交通费' },
+  { text: '住宿费', value: '住宿费' },
+  { text: '餐饮费', value: '餐饮费' },
+  { text: '办公费', value: '办公费' },
+  { text: '差旅费', value: '差旅费' },
+  { text: '其他', value: '其他' }
 ]
 
 const timeColumns = [
@@ -497,6 +513,11 @@ const onConfirmCardType = ({ selectedValues }) => {
   showCardType.value = false
 }
 
+const onConfirmExpenseType = ({ selectedValues }) => {
+  formData.expenseType = selectedValues[0]
+  showExpenseType.value = false
+}
+
 const onConfirmStartDate = (value) => {
   const date = new Date(value)
   const dateStr = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
@@ -508,14 +529,14 @@ const onConfirmStartDate = (value) => {
   } else if (currentType.value === 'card') {
     formData.cardDate = dateStr
   } else {
-    formData.startTime = dateStr
+    formData.startTime = dateStr + 'T00:00:00'
   }
   showStartDate.value = false
 }
 
 const onConfirmEndDate = (value) => {
   const date = new Date(value)
-  formData.endTime = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
+  formData.endTime = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}T23:59:59`
   showEndDate.value = false
 }
 
@@ -544,29 +565,67 @@ const onSubmit = async () => {
   }
   const departmentId = localStorage.getItem('departmentId')
 
-  const data = {
+  const baseData = {
     applicantId: employeeId.value,
     applicantName: employeeName.value,
     applicantDepartmentId: departmentId ? parseInt(departmentId) : null,
     approvalType: currentType.value,
     title: formData.title,
-    content: formData.content,
-    leaveType: formData.leaveType,
-    startTime: formData.startTime,
-    endTime: formData.endTime,
-    destCity: formData.destCity,
-    workDate: formData.workDate,
-    startTimeOnly: formData.startTimeOnly,
-    endTimeOnly: formData.endTimeOnly,
-    expenseType: formData.expenseType,
-    amount: formData.amount,
-    expenseDate: formData.expenseDate,
-    goodsName: formData.goodsName,
-    quantity: formData.quantity,
-    unitPrice: formData.unitPrice,
-    cardDate: formData.cardDate,
-    cardTime: formData.cardTime,
-    cardType: formData.cardType
+    content: formData.content
+  }
+
+  let data = {}
+  switch (currentType.value) {
+    case 'leave':
+      data = {
+        ...baseData,
+        leaveType: formData.leaveType,
+        startTime: formData.startTime,
+        endTime: formData.endTime
+      }
+      break
+    case 'business':
+      data = {
+        ...baseData,
+        destCity: formData.destCity,
+        startTime: formData.startTime,
+        endTime: formData.endTime
+      }
+      break
+    case 'overtime':
+      data = {
+        ...baseData,
+        workDate: formData.workDate,
+        startTimeOnly: formData.startTimeOnly,
+        endTimeOnly: formData.endTimeOnly
+      }
+      break
+    case 'reimburse':
+      data = {
+        ...baseData,
+        expenseType: formData.expenseType,
+        amount: formData.amount ? parseFloat(formData.amount) : null,
+        expenseDate: formData.expenseDate
+      }
+      break
+    case 'purchase':
+      data = {
+        ...baseData,
+        goodsName: formData.goodsName,
+        quantity: formData.quantity ? parseInt(formData.quantity) : null,
+        unitPrice: formData.unitPrice ? parseFloat(formData.unitPrice) : null
+      }
+      break
+    case 'card':
+      data = {
+        ...baseData,
+        cardDate: formData.cardDate,
+        cardTime: formData.cardTime,
+        cardType: formData.cardType
+      }
+      break
+    default:
+      data = baseData
   }
 
   submitting.value = true

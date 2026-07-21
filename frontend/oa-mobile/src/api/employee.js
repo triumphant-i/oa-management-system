@@ -22,6 +22,14 @@ export function getEmployeeList(page, size, departmentId) {
   })
 }
 
+// 获取所有在职员工（不分页，用于参会人选择等）
+export function getAllEmployees() {
+  return request({
+    url: '/employee/findAll',
+    method: 'get'
+  })
+}
+
 // 根据ID查询员工详情
 export function getEmployeeById(id) {
   return request({

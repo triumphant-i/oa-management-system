@@ -135,10 +135,9 @@ const onSearch = () => {
 }
 
 onMounted(() => {
-  const userInfoStr = localStorage.getItem('userInfo')
-  if (userInfoStr) {
-    const userInfo = JSON.parse(userInfoStr)
-    employeeId.value = userInfo.userId || userInfo.id || null
+  const storedEmployeeId = localStorage.getItem('employeeId')
+  if (storedEmployeeId) {
+    employeeId.value = parseInt(storedEmployeeId)
   }
   fetchHistory()
 })

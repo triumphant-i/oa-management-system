@@ -1,0 +1,1 @@
+ALTER TABLE t_message ADD COLUMN related_id INT DEFAULT NULL COMMENT '关联ID（申请ID/会议ID等）' AFTER msg_type;

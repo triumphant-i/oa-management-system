@@ -135,46 +135,67 @@
     </van-popup>
 
     <!-- 参会人选择弹窗 -->
-    <van-popup v-model:show="showParticipantPicker" position="bottom" round style="height: 70%;">
+    <van-popup v-model:show="showParticipantPicker" position="bottom" round style="height: 80%;">
       <div style="padding:16px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;">
         <h3 style="margin:0;">选择参会人</h3>
         <van-button text size="small" @click="confirmParticipants">确定</van-button>
       </div>
-      <div style="padding:16px;overflow-y:auto;height:calc(100% - 60px);">
-        <div class="participant-tabs">
-          <span class="tab-item" :class="{ active: participantTab === 'employee' }" @click="participantTab = 'employee'">选择人员</span>
-          <span class="tab-item" :class="{ active: participantTab === 'department' }" @click="participantTab = 'department'">选择部门</span>
+      <div style="padding:12px 16px;overflow-y:auto;height:calc(100% - 60px);">
+        <!-- 搜索框 -->
+        <van-search
+          v-model="searchKeyword"
+          placeholder="搜索员工姓名"
+          shape="round"
+          @update:model-value="onSearch"
+        />
+
+        <!-- 部门筛选 -->
+        <div class="dept-filter-bar">
+          <span
+            class="dept-chip"
+            :class="{ active: selectedDeptFilter === null }"
+            @click="selectedDeptFilter = null"
+          >全部</span>
+          <span
+            v-for="dept in departmentList"
+            :key="dept.id"
+            class="dept-chip"
+            :class="{ active: selectedDeptFilter === dept.id }"
+            @click="selectedDeptFilter = dept.id"
+          >{{ dept.name }}</span>
         </div>
-        
-        <!-- 选择人员 -->
-        <div v-if="participantTab === 'employee'" class="participant-list">
-          <van-checkbox-group v-model="selectedEmployeeIds">
-            <van-cell v-for="emp in employeeList" :key="emp.id" clickable>
-              <template #left-icon>
-                <van-checkbox :name="emp.id" />
-              </template>
-              <template #title>{{ emp.name }}</template>
-              <template #label>{{ emp.departmentName || '无部门' }}</template>
-            </van-cell>
-          </van-checkbox-group>
-        </div>
-        
-        <!-- 选择部门 -->
-        <div v-if="participantTab === 'department'" class="participant-list">
-          <van-checkbox-group v-model="selectedDepartmentIds">
-            <van-cell v-for="dept in departmentList" :key="dept.id" clickable>
-              <template #left-icon>
-                <van-checkbox :name="dept.id" />
-              </template>
-              <template #title>{{ dept.name }}</template>
-              <template #label>{{ getDeptMemberCount(dept.id) }}人</template>
-            </van-cell>
-          </van-checkbox-group>
+
+        <!-- 员工列表（多选） -->
+        <van-checkbox-group v-model="selectedEmployeeIds">
+          <van-cell
+            v-for="emp in filteredEmployeeList"
+            :key="emp.id"
+            clickable
+            @click="toggleCheckbox(emp.id)"
+          >
+            <template #left-icon>
+              <van-checkbox :name="emp.id" :ref="el => checkboxRefs[emp.id] = el" />
+            </template>
+            <template #title>
+              <div class="emp-name">{{ emp.name }}</div>
+            </template>
+            <template #label>
+              <div class="emp-info">{{ getDeptName(emp.departmentId) }} · {{ emp.position || '员工' }}</div>
+            </template>
+          </van-cell>
+        </van-checkbox-group>
+
+        <div v-if="filteredEmployeeList.length === 0" class="search-empty">
+          <van-icon name="search" size="40" color="#ccc" />
+          <p>未找到匹配的员工</p>
         </div>
 
         <!-- 已选人员预览 -->
         <div v-if="selectedParticipants.length > 0" class="selected-preview">
-          <div class="preview-title">已选择 ({{ selectedParticipants.length }}人)</div>
+          <div class="preview-title">
+            已选择 ({{ selectedParticipants.length }}人)
+            <span class="clear-all" @click="clearAllParticipants">清空</span>
+          </div>
           <div class="preview-list">
             <span v-for="p in selectedParticipants" :key="p.id" class="preview-tag">
               {{ p.name }}
@@ -195,7 +216,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { showToast } from 'vant'
 import { getMeetingRoomById, bookMeeting } from '@/api/meeting'
 import { getDepartmentList } from '@/api/department'
-import { getEmployeeList } from '@/api/employee'
+import { getAllEmployees } from '@/api/employee'
 
 const router = useRouter()
 const route = useRoute()
@@ -232,13 +253,79 @@ const formData = ref({
 // ===== 参会人选择 =====
 // =============================================
 const showParticipantPicker = ref(false)
-const participantTab = ref('employee')
 const employeeList = ref([])
 const departmentList = ref([])
 const selectedEmployeeIds = ref([])
-const selectedDepartmentIds = ref([])
 const selectedParticipants = ref([])
 const participantDisplay = ref('')
+const searchKeyword = ref('')
+const selectedDeptFilter = ref(null)
+const checkboxRefs = ref({})
+
+// 按搜索关键词和部门筛选员工
+const filteredEmployeeList = computed(() => {
+  let list = employeeList.value
+  if (selectedDeptFilter.value !== null) {
+    list = list.filter(e => e.departmentId === selectedDeptFilter.value)
+  }
+  if (searchKeyword.value.trim()) {
+    const kw = searchKeyword.value.trim().toLowerCase()
+    list = list.filter(e => e.name.toLowerCase().includes(kw))
+  }
+  return list
+})
+
+const getDeptName = (deptId) => {
+  const dept = departmentList.value.find(d => d.id === deptId)
+  return dept ? dept.name : '无部门'
+}
+
+const onSearch = () => {
+  // 计算属性自动响应
+}
+
+const toggleCheckbox = (empId) => {
+  const idx = selectedEmployeeIds.value.indexOf(empId)
+  if (idx > -1) {
+    selectedEmployeeIds.value.splice(idx, 1)
+  } else {
+    selectedEmployeeIds.value.push(empId)
+  }
+}
+
+const clearAllParticipants = () => {
+  selectedParticipants.value = []
+  selectedEmployeeIds.value = []
+  updateParticipantDisplay()
+}
+
+const removeParticipant = (id) => {
+  selectedParticipants.value = selectedParticipants.value.filter(p => p.id !== id)
+  selectedEmployeeIds.value = selectedEmployeeIds.value.filter(eid => eid !== id)
+  updateParticipantDisplay()
+}
+
+const updateParticipantDisplay = () => {
+  const names = selectedParticipants.value.map(p => p.name)
+  if (names.length === 0) {
+    participantDisplay.value = ''
+  } else if (names.length <= 3) {
+    participantDisplay.value = names.join('、')
+  } else {
+    participantDisplay.value = names.slice(0, 3).join('、') + ` 等${names.length}人`
+  }
+}
+
+const confirmParticipants = () => {
+  // 根据选中的ID构建参会人列表
+  selectedParticipants.value = selectedEmployeeIds.value.map(empId => {
+    const emp = employeeList.value.find(e => e.id === empId)
+    return emp ? { id: emp.id, name: emp.name } : null
+  }).filter(Boolean)
+
+  updateParticipantDisplay()
+  showParticipantPicker.value = false
+}
 
 // =============================================
 // ===== 选择器控制 =====
@@ -269,7 +356,7 @@ const loadEmployeeAndDeptData = async () => {
   try {
     const [deptRes, empRes] = await Promise.all([
       getDepartmentList(),
-      getEmployeeList()
+      getAllEmployees()
     ])
     if (deptRes.code === 0 && deptRes.data) {
       departmentList.value = Array.isArray(deptRes.data) ? deptRes.data : []
@@ -280,61 +367,6 @@ const loadEmployeeAndDeptData = async () => {
   } catch (error) {
     console.error('加载数据失败:', error)
   }
-}
-
-const getDeptMemberCount = (deptId) => {
-  return employeeList.value.filter(e => e.departmentId === deptId).length
-}
-
-const removeParticipant = (id) => {
-  selectedParticipants.value = selectedParticipants.value.filter(p => p.id !== id)
-  selectedEmployeeIds.value = selectedEmployeeIds.value.filter(eid => eid !== id)
-  updateParticipantDisplay()
-}
-
-const updateParticipantDisplay = () => {
-  const names = selectedParticipants.value.map(p => p.name)
-  if (names.length === 0) {
-    participantDisplay.value = ''
-  } else if (names.length <= 3) {
-    participantDisplay.value = names.join('、')
-  } else {
-    participantDisplay.value = names.slice(0, 3).join('、') + ` 等${names.length}人`
-  }
-}
-
-const confirmParticipants = () => {
-  const newParticipants = []
-  
-  // 添加选中的部门成员
-  selectedDepartmentIds.value.forEach(deptId => {
-    const deptMembers = employeeList.value.filter(e => e.departmentId === deptId)
-    deptMembers.forEach(member => {
-      if (!selectedParticipants.value.find(p => p.id === member.id)) {
-        newParticipants.push({ id: member.id, name: member.name })
-      }
-    })
-  })
-  
-  // 添加选中的个人
-  selectedEmployeeIds.value.forEach(empId => {
-    const emp = employeeList.value.find(e => e.id === empId)
-    if (emp && !selectedParticipants.value.find(p => p.id === empId)) {
-      newParticipants.push({ id: emp.id, name: emp.name })
-    }
-  })
-  
-  // 合并去重
-  const allIds = new Set(selectedParticipants.value.map(p => p.id))
-  newParticipants.forEach(p => {
-    if (!allIds.has(p.id)) {
-      selectedParticipants.value.push(p)
-      allIds.add(p.id)
-    }
-  })
-  
-  updateParticipantDisplay()
-  showParticipantPicker.value = false
 }
 
 // =============================================
@@ -532,7 +564,7 @@ const onSubmit = async () => {
       endTime: `${formData.value.date}T${formData.value.endTime}:00`,
       participants: participantNames,
       participantIds: participantIds,
-      description: formData.value.description || ''
+      remark: formData.value.description || ''
     }
     
     const res = await bookMeeting(data)
@@ -558,6 +590,7 @@ onMounted(() => {
   if (id) {
     roomId.value = id
     loadRoomInfo(id)
+    loadEmployeeAndDeptData()
   } else {
     loading.value = false
     showToast('会议室不存在')
@@ -569,6 +602,10 @@ onMounted(() => {
   
   if (route.query.date) {
     formData.value.date = route.query.date
+  }
+
+  if (route.query.startTime) {
+    formData.value.startTime = route.query.startTime
   }
   
   // 获取用户信息
@@ -754,33 +791,56 @@ onMounted(() => {
 }
 
 /* ===== 参会人选择样式 ===== */
-.participant-tabs {
+.dept-filter-bar {
   display: flex;
   gap: 8px;
-  margin-bottom: 16px;
+  overflow-x: auto;
+  padding: 4px 0 12px;
+  -webkit-overflow-scrolling: touch;
 }
-.tab-item {
-  padding: 6px 20px;
+.dept-filter-bar::-webkit-scrollbar { display: none; }
+.dept-chip {
+  flex-shrink: 0;
+  padding: 6px 16px;
   background: #f5f7fa;
   border-radius: 20px;
-  font-size: 14px;
+  font-size: 13px;
   color: #666;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
 }
-.tab-item.active {
+.dept-chip.active {
   background: #3677ef;
   color: #fff;
 }
 
-.participant-list {
-  background: #fff;
-  border-radius: 12px;
-  overflow: hidden;
+:deep(.van-cell) {
+  padding: 10px 16px;
+}
+.emp-name {
+  font-size: 15px;
+  color: #222;
+  font-weight: 500;
+}
+.emp-info {
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+}
+
+.search-empty {
+  text-align: center;
+  padding: 40px 0;
+  color: #ccc;
+}
+.search-empty p {
+  margin-top: 8px;
+  font-size: 14px;
 }
 
 .selected-preview {
-  margin-top: 20px;
+  margin-top: 16px;
   padding: 12px;
   background: #f5f7fa;
   border-radius: 12px;
@@ -790,6 +850,15 @@ onMounted(() => {
   font-weight: 500;
   color: #333;
   margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.clear-all {
+  font-size: 12px;
+  color: #ee0a24;
+  font-weight: normal;
+  cursor: pointer;
 }
 .preview-list {
   display: flex;

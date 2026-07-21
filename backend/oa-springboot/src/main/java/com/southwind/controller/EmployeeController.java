@@ -508,6 +508,26 @@ public class EmployeeController {
     }
 
     /**
+     * 查询所有在职员工（用于参会人选择等场景）
+     */
+    @GetMapping("/findAll")
+    public ResultVO findAll() {
+        try {
+            UserContext.UserInfo currentUser = UserContext.getCurrentUser();
+            if (currentUser == null) {
+                return ResultVOUtil.fail(SystemConstants.MSG_NOT_LOGIN);
+            }
+
+            QueryWrapper<Employee> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq(SystemConstants.COLUMN_STATUS, SystemConstants.EMPLOYEE_STATUS_ACTIVE);
+            queryWrapper.orderByAsc(SystemConstants.COLUMN_DEPARTMENT_ID);
+            return ResultVOUtil.success(employeeService.list(queryWrapper));
+        } catch (Exception e) {
+            return ResultVOUtil.fail("查询失败：" + e.getMessage());
+        }
+    }
+
+    /**
      * 修改密码
      * ✅ 安全修复：
      * 1. 参数校验
