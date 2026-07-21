@@ -180,6 +180,7 @@
       type="date" 
       @confirm="onConfirmCorrectionDate" 
       @close="showCorrectionDatePicker = false"
+      :min-date="minDate"
       :max-date="maxDate"
       title="选择补卡日期"
     />
@@ -214,7 +215,8 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
-import { checkIn, checkOut, getTodayStatus, getMyRecords, applyForCorrection, getCompanyLocation, calculateDistance } from '@/api/attendance'
+import { checkIn, checkOut, getTodayStatus, getMyRecords, getCompanyLocation, calculateDistance } from '@/api/attendance'
+import { submitApproval } from '@/api/approval'
 
 const router = useRouter()
 let timer = null
@@ -257,11 +259,18 @@ const correctionData = ref({
   reason: ''
 })
 
-const correctionTypes = ['上班签到', '下班签退', '忘记打卡']
+const correctionTypes = ['late', 'early', 'miss']
 
 const maxDate = computed(() => {
   const now = new Date()
   return now
+})
+
+const minDate = computed(() => {
+  const d = new Date()
+  d.setDate(d.getDate() - 30)
+  d.setHours(0, 0, 0, 0)
+  return d
 })
 
 const timeColumns = [
@@ -463,17 +472,21 @@ const onConfirmCorrectionTime = ({ selectedValues }) => {
 const submitCorrection = async () => {
   correctionSubmitting.value = true
   try {
+    const departmentId = localStorage.getItem('departmentId')
     const data = {
-      employeeId: employeeId.value,
-      employeeName: employeeName.value,
-      date: correctionData.value.date,
-      time: correctionData.value.time,
-      type: correctionData.value.type,
-      reason: correctionData.value.reason
+      applicantId: employeeId.value,
+      applicantName: employeeName.value,
+      applicantDepartmentId: departmentId ? parseInt(departmentId) : null,
+      approvalType: 'card',
+      title: '补卡申请',
+      content: correctionData.value.reason,
+      cardDate: correctionData.value.date,
+      cardTime: correctionData.value.time,
+      cardType: correctionData.value.type
     }
-    const res = await applyForCorrection(data)
+    const res = await submitApproval(data)
     if (res.code === 0) {
-      showToast('✅ 补卡申请已提交')
+      showToast('✅ 补卡申请已提交，等待审批')
       showApplyCorrection.value = false
       correctionData.value = { date: '', time: '', type: '', reason: '' }
     } else {

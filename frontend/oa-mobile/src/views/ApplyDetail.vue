@@ -75,11 +75,11 @@
       </div>
 
       <!-- 审批意见（如果已审批） -->
-      <div class="info-section" v-if="detail.approveOpinion">
+      <div class="info-section" v-if="detail.approveReason">
         <div class="section-title">审批意见</div>
         <van-cell-group inset>
           <van-cell title="审批人" :value="detail.approverName || '—'" />
-          <van-cell title="意见" :value="detail.approveOpinion" />
+          <van-cell title="意见" :value="detail.approveReason" />
           <van-cell title="审批时间" :value="formatTime(detail.approveTime)" />
         </van-cell-group>
       </div>
@@ -184,12 +184,41 @@ const getTypeLabel = (type) => {
 // ===== 解析详情字段 =====
 const detailFields = computed(() => {
   const fields = {}
-  if (detail.value.fields) {
-    Object.keys(detail.value.fields).forEach(key => {
-      fields[key] = detail.value.fields[key]
-    })
+  const type = detail.value.approvalType
+  const d = detail.value
+
+  switch (type) {
+    case 'leave':
+      if (d.leaveType) fields['请假类型'] = d.leaveType
+      if (d.startTime) fields['开始时间'] = formatDateTime(d.startTime)
+      if (d.endTime) fields['结束时间'] = formatDateTime(d.endTime)
+      break
+    case 'business':
+      if (d.destCity) fields['出差城市'] = d.destCity
+      if (d.startTime) fields['出发时间'] = formatDateTime(d.startTime)
+      if (d.endTime) fields['返回时间'] = formatDateTime(d.endTime)
+      break
+    case 'overtime':
+      if (d.workDate) fields['加班日期'] = d.workDate
+      if (d.startTimeOnly) fields['开始时间'] = d.startTimeOnly
+      if (d.endTimeOnly) fields['结束时间'] = d.endTimeOnly
+      break
+    case 'reimburse':
+      if (d.expenseType) fields['报销类型'] = d.expenseType
+      if (d.amount) fields['报销金额'] = '¥' + d.amount
+      if (d.expenseDate) fields['费用日期'] = d.expenseDate
+      break
+    case 'purchase':
+      if (d.goodsName) fields['物品名称'] = d.goodsName
+      if (d.quantity) fields['采购数量'] = d.quantity + ' 件'
+      if (d.unitPrice) fields['单价'] = '¥' + d.unitPrice
+      break
+    case 'card':
+      if (d.cardDate) fields['补卡日期'] = d.cardDate
+      if (d.cardTime) fields['补卡时间'] = d.cardTime
+      if (d.cardType) fields['补卡类型'] = d.cardType
+      break
   }
-  // 如果有额外字段可以在这里添加
   return fields
 })
 
@@ -277,6 +306,16 @@ const formatTime = (timeStr) => {
   }
 }
 
+const formatDateTime = (timeStr) => {
+  if (!timeStr) return ''
+  try {
+    const date = new Date(timeStr)
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`
+  } catch {
+    return timeStr
+  }
+}
+
 // =============================================
 // ===== 加载详情 =====
 // =============================================
@@ -355,12 +394,26 @@ const handleDeleteAttachment = async (id, index) => {
 
 const handleDownload = async (id) => {
   try {
-    const res = await downloadAttachment(id)
-    const blob = new Blob([res.data], { type: res.headers['content-type'] || 'application/octet-stream' })
+    const response = await downloadAttachment(id)
+    
+    const blob = new Blob([response.data], { 
+      type: response.headers['content-type'] || response.headers['Content-Type'] || 'application/octet-stream' 
+    })
+    
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = res.headers['content-disposition']?.split('filename=')[1]?.replace(/"/g, '') || 'attachment'
+    
+    let fileName = 'attachment'
+    const contentDisposition = response.headers['content-disposition'] || response.headers['Content-Disposition']
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+      if (match && match[1]) {
+        fileName = match[1].replace(/['"]/g, '')
+      }
+    }
+    
+    link.download = decodeURIComponent(fileName)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)

@@ -57,7 +57,7 @@
               :rules="[{ required: true, message: '请选择请假类型' }]"
             />
             <van-field
-              v-model="formData.startTime"
+              v-model="formData.displayStartTime"
               label="开始日期"
               placeholder="请选择"
               is-link
@@ -65,7 +65,7 @@
               :rules="[{ required: true, message: '请选择开始日期' }]"
             />
             <van-field
-              v-model="formData.endTime"
+              v-model="formData.displayEndTime"
               label="结束日期"
               placeholder="请选择"
               is-link
@@ -82,7 +82,7 @@
               :rules="[{ required: true, message: '请输入出差城市' }]"
             />
             <van-field
-              v-model="formData.startTime"
+              v-model="formData.displayStartTime"
               label="出发日期"
               placeholder="请选择"
               is-link
@@ -90,7 +90,7 @@
               :rules="[{ required: true, message: '请选择出发日期' }]"
             />
             <van-field
-              v-model="formData.endTime"
+              v-model="formData.displayEndTime"
               label="返回日期"
               placeholder="请选择"
               is-link
@@ -334,6 +334,8 @@ const formData = reactive({
   leaveType: '',
   startTime: '',
   endTime: '',
+  displayStartTime: '',
+  displayEndTime: '',
   destCity: '',
   workDate: '',
   startTimeOnly: '',
@@ -365,6 +367,9 @@ const endDateValue = ref(new Date())
 
 const minDate = computed(() => {
   const d = new Date()
+  if (currentType.value === 'card') {
+    d.setDate(d.getDate() - 30)
+  }
   d.setHours(0, 0, 0, 0)
   return d
 })
@@ -386,9 +391,9 @@ const leaveTypeColumns = [
 ]
 
 const cardTypeColumns = [
-  { text: '迟到补卡', value: '迟到补卡' },
-  { text: '早退补卡', value: '早退补卡' },
-  { text: '漏签补卡', value: '漏签补卡' }
+  { text: '迟到补卡', value: 'late' },
+  { text: '早退补卡', value: 'early' },
+  { text: '漏签补卡', value: 'miss' }
 ]
 
 const expenseTypeColumns = [
@@ -529,6 +534,7 @@ const onConfirmStartDate = (value) => {
   } else if (currentType.value === 'card') {
     formData.cardDate = dateStr
   } else {
+    formData.displayStartTime = dateStr
     formData.startTime = dateStr + 'T00:00:00'
   }
   showStartDate.value = false
@@ -536,7 +542,9 @@ const onConfirmStartDate = (value) => {
 
 const onConfirmEndDate = (value) => {
   const date = new Date(value)
-  formData.endTime = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}T23:59:59`
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
+  formData.displayEndTime = dateStr
+  formData.endTime = dateStr + 'T23:59:59'
   showEndDate.value = false
 }
 
@@ -635,14 +643,34 @@ const onSubmit = async () => {
       const approvalId = res.data
       
       if (attachments.value.length > 0 && approvalId) {
+        let uploadSuccess = true
         for (const item of attachments.value) {
           if (item.file) {
-            await uploadAttachment(item.file, approvalId, 'approval')
+            try {
+              const uploadRes = await uploadAttachment(item.file, approvalId, 'approval')
+              if (uploadRes.code === 0 && uploadRes.data) {
+                item.id = uploadRes.data.id
+                item.fileName = uploadRes.data.fileName
+                item.fileSize = uploadRes.data.fileSize
+                item.file = null
+              } else {
+                uploadSuccess = false
+              }
+            } catch (uploadError) {
+              uploadSuccess = false
+            }
           }
         }
+        
+        if (!uploadSuccess) {
+          showToast('✅ 申请提交成功，部分附件上传失败')
+        } else {
+          showToast('✅ 申请提交成功！')
+        }
+      } else {
+        showToast('✅ 申请提交成功！')
       }
       
-      showToast('✅ 申请提交成功！')
       resetForm()
       currentType.value = ''
     } else {

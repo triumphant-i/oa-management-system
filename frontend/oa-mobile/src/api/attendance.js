@@ -44,14 +44,6 @@ export function findByDate(date) {
   })
 }
 
-export function applyForCorrection(data) {
-  return request({
-    url: '/attendance/applyForCorrection',
-    method: 'post',
-    data
-  })
-}
-
 export function getCompanyLocation() {
   return request({
     url: '/attendance/companyLocation',
