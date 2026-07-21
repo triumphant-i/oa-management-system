@@ -39,7 +39,6 @@
       </div>
       <div class="toolbar-right" v-if="role === 'SYSTEM_ADMIN' || role === 'DEPARTMENT_MANAGER'">
         <van-button type="primary" size="small" @click="openAddModal">+ 添加</van-button>
-        <van-button type="success" size="small" plain @click="showImportModal = true" v-if="role === 'SYSTEM_ADMIN'">导入</van-button>
       </div>
     </div>
 

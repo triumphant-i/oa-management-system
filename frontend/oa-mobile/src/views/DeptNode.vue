@@ -62,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const props = defineProps({
   dept: Object,
@@ -78,9 +78,6 @@ const internalExpanded = ref(false)
 const showMenu = ref(false)
 
 const isExpanded = computed(() => {
-  if (props.expanded !== undefined) {
-    return props.expanded
-  }
   return internalExpanded.value
 })
 
@@ -103,10 +100,14 @@ const getChildMembers = (deptId) => {
 }
 
 const toggleExpand = () => {
-  if (props.expanded === undefined) {
-    internalExpanded.value = !internalExpanded.value
-  }
+  internalExpanded.value = !internalExpanded.value
 }
+
+watch(() => props.expanded, (newVal) => {
+  if (newVal !== undefined) {
+    internalExpanded.value = newVal
+  }
+})
 
 const actions = [
   { name: '编辑部门', value: 'edit' },

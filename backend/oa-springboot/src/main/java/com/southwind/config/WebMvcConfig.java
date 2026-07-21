@@ -2,34 +2,47 @@ package com.southwind.config;
 
 import com.southwind.interceptor.PermissionInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-/**
- * Spring MVC配置类
- * 注册拦截器
- */
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
+
+    @Value("${file.upload.path:./uploads}")
+    private String uploadPath;
 
     @Autowired
     private PermissionInterceptor permissionInterceptor;
 
-    /**
-     * 添加拦截器
-     */
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:" + uploadPath + "/");
+    }
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**")
+                .allowedOrigins("*")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .maxAge(3600);
+    }
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(permissionInterceptor)
-                .addPathPatterns("/**")  // 拦截所有路径
-                .excludePathPatterns(    // 排除不需要拦截的路径
-                        "/employee/login",      // 登录接口
-                        "/error",               // 错误页面
-                        "/swagger-resources/**", // Swagger资源
-                        "/webjars/**",          // WebJars
-                        "/v2/api-docs",         // API文档
-                        "/csrf"                 // CSRF
+                .addPathPatterns("/**")
+                .excludePathPatterns(
+                        "/employee/login",
+                        "/employee/register",
+                        "/error",
+                        "/uploads/**",
+                        "/attachment/download/**"
                 );
     }
 }

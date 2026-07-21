@@ -146,7 +146,7 @@
             :rules="[{ required: true, message: '请选择补卡时间' }]"
           />
           <van-field
-            v-model="correctionData.type"
+            :model-value="cardTypeMap[correctionData.type] || ''"
             label="补卡类型"
             placeholder="请选择"
             is-link
@@ -189,14 +189,9 @@
       <van-picker :columns="timeColumns" @confirm="onConfirmCorrectionTime" @cancel="showCorrectionTimePicker = false" title="选择时间" />
     </van-popup>
 
-    <van-action-sheet v-model:show="showCorrectionTypePicker" title="选择补卡类型">
-      <div class="picker-list">
-        <div class="picker-item" v-for="item in correctionTypes" :key="item" @click="correctionData.type = item; showCorrectionTypePicker = false">
-          <span>{{ item }}</span>
-          <van-icon v-if="correctionData.type === item" name="success" color="#3677ef" />
-        </div>
-      </div>
-    </van-action-sheet>
+    <van-popup v-model:show="showCorrectionTypePicker" position="bottom" round>
+      <van-picker :columns="correctionTypeColumns" @confirm="onConfirmCorrectionType" @cancel="showCorrectionTypePicker = false" title="选择补卡类型" />
+    </van-popup>
 
     <div class="bottom-bar">
       <van-button plain block size="large" @click="$router.back()" class="back-btn">
@@ -259,7 +254,17 @@ const correctionData = ref({
   reason: ''
 })
 
-const correctionTypes = ['late', 'early', 'miss']
+const correctionTypeColumns = [
+  { text: '迟到补卡', value: 'late' },
+  { text: '早退补卡', value: 'early' },
+  { text: '漏签补卡', value: 'miss' }
+]
+
+const cardTypeMap = {
+  late: '迟到补卡',
+  early: '早退补卡',
+  miss: '漏签补卡'
+}
 
 const maxDate = computed(() => {
   const now = new Date()
@@ -467,6 +472,11 @@ const onConfirmCorrectionDate = (value) => {
 const onConfirmCorrectionTime = ({ selectedValues }) => {
   correctionData.value.time = selectedValues[0]
   showCorrectionTimePicker.value = false
+}
+
+const onConfirmCorrectionType = ({ selectedValues }) => {
+  correctionData.value.type = selectedValues[0]
+  showCorrectionTypePicker.value = false
 }
 
 const submitCorrection = async () => {
@@ -775,17 +785,7 @@ onUnmounted(() => {
 }
 .correction-btn:active { opacity: 0.8; }
 
-.picker-list { padding: 12px 16px 20px; }
-.picker-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 12px;
-  border-bottom: 1px solid #f5f5f5;
-  cursor: pointer;
-}
-.picker-item:active { background: #f5f7fa; }
-.picker-item span { font-size: 15px; color: #333; }
+
 
 .safe-bottom { height: 20px; }
 :deep(.van-popup) { border-radius: 16px 16px 0 0; }

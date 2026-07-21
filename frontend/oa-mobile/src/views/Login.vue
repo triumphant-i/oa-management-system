@@ -105,10 +105,7 @@
           <span class="quick-item" @click="quickLogin('employee')">员工</span>
         </div>
 
-        <!-- 注册入口 -->
-        <div class="register-tip">
-          还没有账号？<span class="register-link" @click="handleRegister">立即注册</span>
-        </div>
+        
       </form>
     </div>
 
@@ -223,9 +220,7 @@ const handleForget = () => {
   showToast('请联系管理员重置密码')
 }
 
-const handleRegister = () => {
-  showToast('注册功能开发中')
-}
+
 
 // =============================================
 // ===== 如果已登录，直接跳转 =====
@@ -446,17 +441,7 @@ onMounted(() => {
   color: #fff;
 }
 
-/* ===== 注册入口 ===== */
-.register-tip {
-  text-align: center;
-  font-size: 14px;
-  color: #888;
-}
-.register-link {
-  color: #3677ef;
-  font-weight: 500;
-  cursor: pointer;
-}
+
 
 /* ===== 底部版权 ===== */
 .login-footer {

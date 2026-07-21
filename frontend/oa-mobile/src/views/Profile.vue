@@ -11,7 +11,12 @@
     </div>
 
     <div class="user-card">
-      <van-image round width="80" height="80" :src="userInfo.avatar || '/default-avatar.png'" />
+      <div class="avatar-wrapper" @click="showAvatarUpload = true">
+        <van-image round width="80" height="80" :src="userInfo.avatar || '/default-avatar.png'" />
+        <div class="avatar-edit-mask">
+          <van-icon name="camera-o" size="24" color="#fff" />
+        </div>
+      </div>
       <div class="user-info">
         <p class="user-name">{{ userInfo.name }}</p>
         <p class="user-role">{{ userInfo.department }} · {{ userInfo.position }}</p>
@@ -73,7 +78,13 @@
         </div>
         <div class="info-item">
           <span class="info-label">性别</span>
-          <van-field v-model="editData.gender" placeholder="请输入性别" class="edit-field" />
+          <van-field
+            :model-value="genderMap[editData.gender] || ''"
+            placeholder="请选择性别"
+            is-link
+            @click="showGenderPicker = true"
+            class="edit-field"
+          />
         </div>
 
         <div class="info-item readonly">
@@ -84,9 +95,9 @@
           <span class="info-label">部门</span>
           <span class="info-value readonly-value">{{ userInfo.department }}</span>
         </div>
-        <div class="info-item">
+        <div class="info-item readonly">
           <span class="info-label">职位</span>
-          <van-field v-model="editData.position" placeholder="请输入职位" class="edit-field" />
+          <span class="info-value readonly-value">{{ userInfo.position }}</span>
         </div>
         <div class="info-item readonly">
           <span class="info-label">入职日期</span>
@@ -124,6 +135,10 @@
     </div>
 
     <div class="safe-bottom"></div>
+
+    <van-popup v-model:show="showGenderPicker" position="bottom" round>
+      <van-picker :columns="genderColumns" @confirm="onConfirmGender" @cancel="showGenderPicker = false" title="选择性别" />
+    </van-popup>
 
     <van-popup v-model:show="showChangePassword" position="bottom" round style="padding:20px 16px 30px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
@@ -164,6 +179,31 @@
         </div>
       </van-form>
     </van-popup>
+
+    <van-popup v-model:show="showAvatarUpload" position="center" round style="width:80%;">
+      <div style="padding:20px;">
+        <h3 style="margin:0 0 16px;text-align:center;">上传头像</h3>
+        
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <van-button type="primary" block @click="chooseAvatar">
+            <van-icon name="plus" /> 选择图片
+          </van-button>
+          
+          <div v-if="avatarPreview" style="text-align:center;">
+            <van-image :src="avatarPreview" round width="120" height="120" style="margin:0 auto;" />
+          </div>
+          
+          <div v-if="avatarPreview" style="display:flex;gap:12px;">
+            <van-button plain block @click="avatarPreview = ''">取消</van-button>
+            <van-button type="primary" block @click="uploadAvatar" :loading="uploading">
+              确认上传
+            </van-button>
+          </div>
+        </div>
+      </div>
+    </van-popup>
+
+    <input type="file" ref="avatarInput" accept="image/*" style="display:none;" @change="onAvatarChange" />
   </div>
 </template>
 
@@ -172,6 +212,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getMyInfo, updateProfile, updatePassword } from '@/api/profile'
+import request from '@/utils/request'
 
 const router = useRouter()
 
@@ -203,6 +244,21 @@ const editData = reactive({
 
 const showChangePassword = ref(false)
 const passwordSubmitting = ref(false)
+const showGenderPicker = ref(false)
+const showAvatarUpload = ref(false)
+const avatarPreview = ref('')
+const avatarInput = ref(null)
+const uploading = ref(false)
+
+const genderColumns = [
+  { text: '男', value: '男' },
+  { text: '女', value: '女' }
+]
+
+const genderMap = {
+  '男': '男',
+  '女': '女'
+}
 
 const passwordData = reactive({
   oldPassword: '',
@@ -250,6 +306,11 @@ const cancelEdit = () => {
   isEditing.value = false
 }
 
+const onConfirmGender = ({ selectedValues }) => {
+  editData.gender = selectedValues[0]
+  showGenderPicker.value = false
+}
+
 const saveEdit = async () => {
   if (!editData.name.trim()) {
     showToast('请输入姓名')
@@ -269,7 +330,6 @@ const saveEdit = async () => {
     const res = await updateProfile({
       name: editData.name,
       gender: editData.gender,
-      position: editData.position,
       phone: editData.phone,
       email: editData.email
     })
@@ -277,7 +337,6 @@ const saveEdit = async () => {
       showToast('✅ 个人信息已更新！')
       userInfo.name = editData.name
       userInfo.gender = editData.gender
-      userInfo.position = editData.position
       userInfo.phone = editData.phone
       userInfo.email = editData.email
       isEditing.value = false
@@ -316,6 +375,58 @@ const submitChangePassword = async () => {
     showToast('修改失败，请稍后重试')
   } finally {
     passwordSubmitting.value = false
+  }
+}
+
+const chooseAvatar = () => {
+  avatarInput.value?.click()
+}
+
+const onAvatarChange = (event) => {
+  const file = event.target.files?.[0]
+  if (file) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      avatarPreview.value = e.target?.result
+    }
+    reader.readAsDataURL(file)
+  }
+}
+
+const uploadAvatar = async () => {
+  const file = avatarInput.value?.files?.[0]
+  if (!file) {
+    showToast('请选择图片')
+    return
+  }
+
+  uploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const res = await request({
+      url: '/profile/uploadAvatar',
+      method: 'post',
+      data: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+
+    if (res.code === 0) {
+      showToast('✅ 头像上传成功！')
+      userInfo.avatar = res.data?.avatar || ''
+      showAvatarUpload.value = false
+      avatarPreview.value = ''
+    } else {
+      showToast(res.message || '上传失败')
+    }
+  } catch (error) {
+    showToast('上传失败，请稍后重试')
+  } finally {
+    uploading.value = false
+    avatarInput.value.value = ''
   }
 }
 
@@ -364,6 +475,24 @@ onMounted(() => {
   gap: 16px;
   margin-bottom: 16px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.avatar-wrapper {
+  position: relative;
+  cursor: pointer;
+}
+
+.avatar-edit-mask {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  background: rgba(0,0,0,0.5);
+  border-radius: 0 0 40px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .user-info { flex: 1; }
 .user-name { font-size: 20px; font-weight: bold; margin: 0; color: #222; }

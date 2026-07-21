@@ -128,7 +128,7 @@
 
     <!-- ===== 底部导航栏 ===== -->
     <van-tabbar v-model="activeTab" active-color="#3677ef" inactive-color="#999" @change="onTabChange">
-      <van-tabbar-item icon="chat-o">消息</van-tabbar-item>
+      <van-tabbar-item icon="chat-o" :badge="unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : null">消息</van-tabbar-item>
       <van-tabbar-item icon="apps-o">自定义</van-tabbar-item>
       <van-tabbar-item icon="wap-home-o">工作台</van-tabbar-item>
     </van-tabbar>
@@ -140,7 +140,8 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
 import { getEmployeeById } from '@/api/employee'
-import { getPendingApprovalCount, getTodayAttendanceStatus, getUnreadCount, getTodayMeetings } from '@/api/home'
+import { getPendingApprovalCount, getTodayAttendanceStatus, getTodayMeetings, getUnreadCount as getAnnouncementUnreadCount } from '@/api/home'
+import { getUnreadCount as getMessageUnreadCount } from '@/api/message'
 
 const router = useRouter()
 
@@ -181,9 +182,10 @@ const unreadCount = ref(0)
 // =============================================
 const fetchStats = async () => {
   try {
-    const [pendingRes, unreadRes, meetingsRes] = await Promise.all([
+    const [pendingRes, announcementRes, messageRes, meetingsRes] = await Promise.all([
       getPendingApprovalCount(employeeId.value, role.value.toUpperCase()),
-      getUnreadCount(),
+      getAnnouncementUnreadCount(),
+      getMessageUnreadCount(),
       getTodayMeetings(employeeId.value)
     ])
     
@@ -191,9 +193,12 @@ const fetchStats = async () => {
       stats.value.pending = pendingRes.data
     }
     
-    if (unreadRes.code === 0 && unreadRes.data) {
-      stats.value.unread = unreadRes.data.count || 0
-      unreadCount.value = unreadRes.data.count || 0
+    if (announcementRes.code === 0 && announcementRes.data) {
+      stats.value.unread = announcementRes.data.count || 0
+    }
+    
+    if (messageRes.code === 0 && messageRes.data) {
+      unreadCount.value = messageRes.data.count || 0
     }
     
     if (meetingsRes.code === 0 && meetingsRes.data) {
@@ -206,6 +211,7 @@ const fetchStats = async () => {
     }
     
     console.log('✅ 首页统计数据更新完成:', stats.value)
+    console.log('✅ 消息未读数量:', unreadCount.value)
   } catch (error) {
     console.error('获取统计数据失败:', error)
   }

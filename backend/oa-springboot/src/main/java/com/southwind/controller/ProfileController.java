@@ -12,10 +12,20 @@ import com.southwind.util.ValidatorUtil;
 import com.southwind.vo.ResultVO;
 import com.southwind.common.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/profile")
@@ -29,6 +39,9 @@ public class ProfileController {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Value("${file.upload.path:./uploads}")
+    private String uploadPath;
 
     @GetMapping("/myInfo")
     public ResultVO getMyInfo() {
@@ -149,6 +162,63 @@ public class ProfileController {
             return ResultVOUtil.fail(e.getMessage());
         } catch (Exception e) {
             return ResultVOUtil.fail("修改密码失败：" + e.getMessage());
+        }
+    }
+
+    @PostMapping("/uploadAvatar")
+    public ResultVO uploadAvatar(@RequestParam("file") MultipartFile file) {
+        try {
+            UserContext.UserInfo currentUser = UserContext.getCurrentUser();
+            if (currentUser == null) {
+                return ResultVOUtil.fail(SystemConstants.MSG_NOT_LOGIN);
+            }
+
+            if (file.isEmpty()) {
+                return ResultVOUtil.fail("请选择图片");
+            }
+
+            String fileName = file.getOriginalFilename();
+            String extension = "";
+            if (fileName != null && fileName.contains(".")) {
+                extension = fileName.substring(fileName.lastIndexOf("."));
+            }
+
+            if (!extension.toLowerCase().matches("\\.(jpg|jpeg|png|gif|bmp|webp)$")) {
+                return ResultVOUtil.fail("只支持JPG、JPEG、PNG、GIF、BMP、WEBP格式的图片");
+            }
+
+            String uuid = UUID.randomUUID().toString().replace("-", "");
+            String newFileName = uuid + extension;
+            String datePath = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+            String filePath = datePath + "/" + newFileName;
+
+            Path path = Paths.get(uploadPath, datePath);
+            if (!Files.exists(path)) {
+                Files.createDirectories(path);
+            }
+
+            File dest = new File(uploadPath + "/" + filePath);
+            file.transferTo(dest);
+
+            String avatarUrl = "/uploads/" + filePath;
+
+            Employee employee = new Employee();
+            employee.setId(currentUser.getUserId());
+            employee.setAvatar(avatarUrl);
+
+            boolean success = employeeService.updateById(employee);
+            if (success) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("avatar", avatarUrl);
+                return ResultVOUtil.success(result);
+            } else {
+                return ResultVOUtil.fail(SystemConstants.MSG_OPERATION_FAILED);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            return ResultVOUtil.fail("上传失败");
+        } catch (Exception e) {
+            return ResultVOUtil.fail("上传失败：" + e.getMessage());
         }
     }
 }
