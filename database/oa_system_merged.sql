@@ -1,7 +1,7 @@
 -- ==========================================
--- OA管理系统完整数据库脚本（完整版）
--- 包含所有表结构、字段注释、约束、索引、触发器、初始测试数据
--- 创建时间: 2026-07-20
+-- OA管理系统完整数据库脚本（合并版）
+-- 整合所有SQL文件，确保与现有数据库等价
+-- 创建时间: 2026-07-21
 -- 适配版本: SpringBoot 2.7.18 + Vue 3
 -- 技术栈: MySQL 8.0+
 -- ==========================================
@@ -41,7 +41,7 @@ DROP TABLE IF EXISTS `t_employee`;
 CREATE TABLE `t_employee` (
   `id` INT(11) NOT NULL AUTO_INCREMENT COMMENT '员工ID',
   `username` VARCHAR(50) NOT NULL COMMENT '用户名（登录账号）',
-  `password` VARCHAR(100) NOT NULL COMMENT '密码（BCrypt加密）',
+  `password` VARCHAR(100) NOT NULL COMMENT '密码（MD5+salt格式）',
   `name` VARCHAR(50) NOT NULL COMMENT '员工姓名',
   `gender` VARCHAR(10) DEFAULT '男' COMMENT '性别（男/女）',
   `phone` VARCHAR(20) DEFAULT NULL COMMENT '联系电话',
@@ -91,8 +91,8 @@ CREATE TABLE `t_approval` (
   `unit_price` DECIMAL(10,2) DEFAULT NULL COMMENT '单价',
   `card_date` VARCHAR(20) DEFAULT NULL COMMENT '补卡日期',
   `card_time` VARCHAR(20) DEFAULT NULL COMMENT '补卡时间',
-  `card_type` VARCHAR(50) DEFAULT NULL COMMENT '补卡类型',
-  `status` VARCHAR(20) DEFAULT '待审批' COMMENT '状态（待审批/已通过/已拒绝/已撤回）',
+  `card_type` VARCHAR(50) DEFAULT NULL COMMENT '补卡类型（late/early/miss）',
+  `status` VARCHAR(20) DEFAULT 'pending' COMMENT '状态（pending/approved/rejected/withdrawn）',
   `approver_id` INT(11) DEFAULT NULL COMMENT '审批人ID',
   `approver_name` VARCHAR(50) DEFAULT NULL COMMENT '审批人姓名',
   `approve_time` DATETIME DEFAULT NULL COMMENT '审批时间',
@@ -240,7 +240,7 @@ CREATE TABLE `t_message` (
   `title` VARCHAR(200) DEFAULT NULL COMMENT '消息标题',
   `content` TEXT COMMENT '消息内容',
   `msg_type` VARCHAR(50) DEFAULT NULL COMMENT '消息类型',
-  `related_id` INT(11) DEFAULT NULL COMMENT '关联ID',
+  `related_id` INT(11) DEFAULT NULL COMMENT '关联ID（申请ID/会议ID等）',
   `is_read` TINYINT(1) DEFAULT 0 COMMENT '是否已读',
   `is_top` TINYINT(1) DEFAULT 0 COMMENT '是否置顶',
   `status` VARCHAR(20) DEFAULT '正常' COMMENT '状态',
@@ -421,14 +421,19 @@ UPDATE `t_department` d SET `manager_id` = (
     LIMIT 1
 ) WHERE `manager_id` IS NULL;
 
--- 4. 审批数据
+-- 4. 设置运营部、人事部、财务部负责人（王五=4, 赵六=5, 钱七=6）
+UPDATE `t_department` SET `manager_id` = 4 WHERE `id` = 3;
+UPDATE `t_department` SET `manager_id` = 5 WHERE `id` = 4;
+UPDATE `t_department` SET `manager_id` = 6 WHERE `id` = 5;
+
+-- 4. 审批数据（状态使用英文：pending/approved/rejected/withdrawn，补卡类型使用英文：late/early/miss）
 INSERT INTO `t_approval` (`applicant_id`, `applicant_name`, `applicant_department_id`, `approval_type`, `title`, `content`, `start_time`, `end_time`, `amount`, `leave_type`, `dest_city`, `work_date`, `start_time_only`, `end_time_only`, `expense_type`, `expense_date`, `goods_name`, `quantity`, `unit_price`, `card_date`, `card_time`, `card_type`, `status`, `approver_id`, `approver_name`, `approve_time`, `approve_reason`) VALUES
-(7, '员工一', 1, 'leave', '年假申请', '计划休假一天', '2026-07-21 09:00:00', '2026-07-21 18:00:00', NULL, '年假', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '待审批', NULL, NULL, NULL, NULL),
-(7, '员工一', 1, 'business', '北京出差', '前往北京客户现场', '2026-07-25 09:00:00', '2026-07-27 18:00:00', NULL, NULL, '北京', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '已通过', 1, '系统管理员', '2026-07-16 10:30:00', '同意出差'),
-(8, '员工二', 1, 'overtime', '周末加班', '项目赶进度', NULL, NULL, NULL, NULL, NULL, '2026-07-26', '18:00', '20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '待审批', NULL, NULL, NULL, NULL),
-(9, '员工三', 2, 'reimburse', '交通费报销', '出差交通费', NULL, NULL, 1500.00, NULL, NULL, NULL, NULL, NULL, '交通费', '2026-07-15', NULL, NULL, NULL, NULL, NULL, NULL, '已通过', 1, '系统管理员', '2026-07-16 11:00:00', '同意报销'),
-(10, '员工四', 3, 'purchase', '办公用品采购', '采购打印纸', NULL, NULL, 500.00, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '打印纸', 10, 50.00, NULL, NULL, NULL, '待审批', NULL, NULL, NULL, NULL),
-(7, '员工一', 1, 'card', '迟到补卡', '因交通拥堵迟到', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-07-19', '09:15', '迟到补卡', '已通过', 2, '张三', '2026-07-19 10:00:00', '情况属实');
+(7, '员工一', 1, 'leave', '年假申请', '计划休假一天', '2026-07-21 09:00:00', '2026-07-21 18:00:00', NULL, '年假', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'pending', NULL, NULL, NULL, NULL),
+(7, '员工一', 1, 'business', '北京出差', '前往北京客户现场', '2026-07-25 09:00:00', '2026-07-27 18:00:00', NULL, NULL, '北京', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'approved', 1, '系统管理员', '2026-07-16 10:30:00', '同意出差'),
+(8, '员工二', 1, 'overtime', '周末加班', '项目赶进度', NULL, NULL, NULL, NULL, NULL, '2026-07-26', '18:00', '20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'pending', NULL, NULL, NULL, NULL),
+(9, '员工三', 2, 'reimburse', '交通费报销', '出差交通费', NULL, NULL, 1500.00, NULL, NULL, NULL, NULL, NULL, '交通费', '2026-07-15', NULL, NULL, NULL, NULL, NULL, NULL, 'approved', 1, '系统管理员', '2026-07-16 11:00:00', '同意报销'),
+(10, '员工四', 3, 'purchase', '办公用品采购', '采购打印纸', NULL, NULL, 500.00, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '打印纸', 10, 50.00, NULL, NULL, NULL, 'pending', NULL, NULL, NULL, NULL),
+(7, '员工一', 1, 'card', '迟到补卡', '因交通拥堵迟到', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-07-19', '09:15', 'late', 'approved', 2, '张三', '2026-07-19 10:00:00', '情况属实');
 
 -- 5. 公告数据
 INSERT INTO `t_announcement` (`title`, `content`, `publisher_id`, `publisher_name`, `category`, `priority`, `is_top`, `status`) VALUES
@@ -455,16 +460,17 @@ INSERT INTO `t_meeting` (`title`, `room_id`, `room_name`, `organizer_id`, `organ
 ('项目启动会', 1, '第一会议室', 7, '员工一', '员工一,员工二,员工三', '7,8,9', '2026-07-21 09:00:00', '2026-07-21 11:00:00', '已预约', '新项目启动'),
 ('部门周例会', 2, '第二会议室', 2, '张三', '技术部全体', '1,2,7,8', '2026-07-22 14:00:00', '2026-07-22 16:00:00', '已预约', '周例会');
 
--- 9. 消息数据
+-- 9. 消息数据（包含related_id字段）
 INSERT INTO `t_message` (`sender_id`, `sender_name`, `receiver_id`, `receiver_name`, `title`, `content`, `msg_type`, `related_id`, `is_read`) VALUES
 (1, '系统管理员', 7, '员工一', '申请已通过', '您的出差申请已通过', 'APPROVAL', 2, 0),
 (2, '张三', 7, '员工一', '补卡已通过', '您的迟到补卡已通过', 'APPROVAL', 6, 1);
 
--- 10. 字典数据
+-- 10. 字典数据（补卡类型使用英文值）
 INSERT INTO `t_dict` (`key`, `name`, `options`) VALUES
 ('leave_type', '请假类型', '[{"label":"事假","value":"事假"},{"label":"病假","value":"病假"},{"label":"年假","value":"年假"},{"label":"调休","value":"调休"},{"label":"婚假","value":"婚假"},{"label":"产假","value":"产假"},{"label":"丧假","value":"丧假"}]'),
 ('expense_type', '报销类型', '[{"label":"交通费","value":"交通费"},{"label":"住宿费","value":"住宿费"},{"label":"餐饮费","value":"餐饮费"},{"label":"办公费","value":"办公费"},{"label":"差旅费","value":"差旅费"},{"label":"其他","value":"其他"}]'),
-('card_type', '补卡类型', '[{"label":"迟到补卡","value":"迟到补卡"},{"label":"早退补卡","value":"早退补卡"},{"label":"漏签补卡","value":"漏签补卡"}]');
+('card_type', '补卡类型', '[{"label":"迟到补卡","value":"late"},{"label":"早退补卡","value":"early"},{"label":"漏签补卡","value":"miss"}]'),
+('approval_status', '审批状态', '[{"label":"待审批","value":"pending"},{"label":"已通过","value":"approved"},{"label":"已拒绝","value":"rejected"},{"label":"已撤回","value":"withdrawn"}]');
 
 -- 11. 角色数据
 INSERT INTO `t_role` (`name`, `code`, `desc`, `icon`, `color`, `permissions`) VALUES
