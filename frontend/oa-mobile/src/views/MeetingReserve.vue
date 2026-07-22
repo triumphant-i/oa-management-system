@@ -104,8 +104,8 @@
 
           <!-- 提交按钮 -->
           <div class="submit-wrap">
-            <van-button type="primary" block size="large" native-type="submit" :loading="submitting">
-              确认预订
+            <van-button type="primary" block size="large" native-type="submit" :loading="submitting" :disabled="isRoomFull">
+              {{ isRoomFull ? '该日期已约满' : '确认预订' }}
             </van-button>
             <van-button plain block size="large" @click="$router.back()" style="margin-top:10px;">
               取消
@@ -128,10 +128,10 @@
 
     <!-- 时间选择 -->
     <van-popup v-model:show="showStartPicker" position="bottom" round>
-      <van-picker :columns="timeColumns" @confirm="onConfirmStart" @cancel="showStartPicker = false" title="选择开始时间" />
+      <van-picker :columns="startTimeColumns" @confirm="onConfirmStart" @cancel="showStartPicker = false" title="选择开始时间" />
     </van-popup>
     <van-popup v-model:show="showEndPicker" position="bottom" round>
-      <van-picker :columns="timeColumns" @confirm="onConfirmEnd" @cancel="showEndPicker = false" title="选择结束时间" />
+      <van-picker :columns="endTimeColumns" @confirm="onConfirmEnd" @cancel="showEndPicker = false" title="选择结束时间" />
     </van-popup>
 
     <!-- 参会人选择弹窗 -->
@@ -214,7 +214,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast } from 'vant'
-import { getMeetingRoomById, bookMeeting } from '@/api/meeting'
+import { getMeetingRoomById, bookMeeting, checkRoomFull } from '@/api/meeting'
 import { getDepartmentList } from '@/api/department'
 import { getAllEmployees } from '@/api/employee'
 
@@ -231,6 +231,7 @@ const roomLocation = ref('')
 const floor = ref('')
 const capacity = ref(0)
 const loading = ref(true)
+const isRoomFull = ref(false)
 
 // =============================================
 // ===== 用户信息 =====
@@ -381,29 +382,37 @@ const minDate = computed(() => {
 // =============================================
 // ===== 时间选项 =====
 // =============================================
-const timeColumns = [
-  { text: '08:00', value: '08:00' },
-  { text: '08:30', value: '08:30' },
-  { text: '09:00', value: '09:00' },
-  { text: '09:30', value: '09:30' },
-  { text: '10:00', value: '10:00' },
-  { text: '10:30', value: '10:30' },
-  { text: '11:00', value: '11:00' },
-  { text: '11:30', value: '11:30' },
-  { text: '12:00', value: '12:00' },
-  { text: '12:30', value: '12:30' },
-  { text: '13:00', value: '13:00' },
-  { text: '13:30', value: '13:30' },
-  { text: '14:00', value: '14:00' },
-  { text: '14:30', value: '14:30' },
-  { text: '15:00', value: '15:00' },
-  { text: '15:30', value: '15:30' },
-  { text: '16:00', value: '16:00' },
-  { text: '16:30', value: '16:30' },
-  { text: '17:00', value: '17:00' },
-  { text: '17:30', value: '17:30' },
-  { text: '18:00', value: '18:00' }
-]
+const generateAllTimeOptions = () => {
+  const options = []
+  for (let hour = 8; hour <= 21; hour++) {
+    for (let minute = 0; minute < 60; minute += 5) {
+      const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+      options.push({ text: time, value: time })
+    }
+  }
+  options.push({ text: '21:00', value: '21:00' })
+  return options
+}
+
+const allTimeOptions = generateAllTimeOptions()
+
+const startTimeColumns = computed(() => {
+  const today = new Date().toISOString().split('T')[0]
+  if (formData.value.date !== today) {
+    return [allTimeOptions.filter(o => o.value <= '20:55')]
+  }
+  const now = new Date()
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  const roundedMinutes = Math.ceil(nowMinutes / 5) * 5
+  const nowStr = `${String(Math.floor(roundedMinutes / 60)).padStart(2, '0')}:${String(roundedMinutes % 60).padStart(2, '0')}`
+  return [allTimeOptions.filter(o => o.value >= nowStr && o.value <= '20:55')]
+})
+
+const endTimeColumns = computed(() => {
+  const startTime = formData.value.startTime
+  const minTime = startTime || '08:05'
+  return [allTimeOptions.filter(o => o.value > minTime && o.value <= '21:00')]
+})
 
 // =============================================
 // ===== 加载会议室信息 =====
@@ -433,23 +442,35 @@ const loadRoomInfo = async (id) => {
 // =============================================
 // ===== 日期/时间选择 =====
 // =============================================
-const onConfirmDate = (value) => {
+const onConfirmDate = async (value) => {
   const date = new Date(value)
   formData.value.date = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
   showDatePicker.value = false
   fieldErrors.value.date = false
   clearErrors()
+  
+  if (roomId.value) {
+    try {
+      const res = await checkRoomFull(roomId.value, formData.value.date)
+      isRoomFull.value = res.code === 0 && res.data === true
+    } catch {
+      isRoomFull.value = false
+    }
+  }
 }
 
-const onConfirmStart = ({ selectedValues }) => {
-  formData.value.startTime = selectedValues[0]
+const onConfirmStart = ({ selectedOptions }) => {
+  formData.value.startTime = selectedOptions[0].value
   showStartPicker.value = false
   fieldErrors.value.startTime = false
   clearErrors()
+  if (formData.value.endTime && formData.value.endTime <= formData.value.startTime) {
+    formData.value.endTime = ''
+  }
 }
 
-const onConfirmEnd = ({ selectedValues }) => {
-  formData.value.endTime = selectedValues[0]
+const onConfirmEnd = ({ selectedOptions }) => {
+  formData.value.endTime = selectedOptions[0].value
   showEndPicker.value = false
   fieldErrors.value.endTime = false
   clearErrors()
@@ -570,7 +591,7 @@ const onSubmit = async () => {
     const res = await bookMeeting(data)
     if (res.code === 0) {
       showToast('🎉 会议室预订成功！')
-      setTimeout(() => router.push('/meeting'), 500)
+      setTimeout(() => router.go(-1), 500)
     } else {
       showToast(res.msg || '预订失败')
     }
@@ -614,6 +635,12 @@ onMounted(() => {
     employeeId.value = parseInt(idFromStorage)
   }
   employeeName.value = localStorage.getItem('name') || localStorage.getItem('username') || '用户'
+  
+  if (roomId.value && formData.value.date) {
+    checkRoomFull(roomId.value, formData.value.date).then(res => {
+      isRoomFull.value = res.code === 0 && res.data === true
+    })
+  }
 })
 </script>
 

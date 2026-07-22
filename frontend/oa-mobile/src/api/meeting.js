@@ -50,3 +50,84 @@ export function updateMeeting(data) {
     data
   })
 }
+
+export function startMeeting(id) {
+  return request({
+    url: `/meeting/start/${id}`,
+    method: 'put'
+  })
+}
+
+export function endMeeting(id) {
+  return request({
+    url: `/meeting/end/${id}`,
+    method: 'put'
+  })
+}
+
+export function extendMeeting(id, minutes) {
+  return request({
+    url: `/meeting/extend/${id}`,
+    method: 'put',
+    params: { minutes }
+  })
+}
+
+export function getCurrentMeeting(employeeId) {
+  return request({
+    url: `/meeting/current/${employeeId}`,
+    method: 'get'
+  })
+}
+
+export function getUpcomingMeeting(employeeId) {
+  return request({
+    url: `/meeting/upcoming/${employeeId}`,
+    method: 'get'
+  })
+}
+
+export function checkRoomFull(roomId, date) {
+  return request({
+    url: `/meeting/checkFull/${roomId}/${date}`,
+    method: 'get'
+  })
+}
+
+export function getAllMeetings(status) {
+  return request({
+    url: '/meeting/all',
+    method: 'get',
+    params: status ? { status } : {}
+  })
+}
+
+export function getMyInvitedMeetings(employeeId) {
+  return request({
+    url: `/meeting/myInvited/${employeeId}`,
+    method: 'get'
+  })
+}
+
+export function addMeetingRoom(data) {
+  return request({
+    url: '/meetingRoom/save',
+    method: 'post',
+    data
+  })
+}
+
+export function updateMeetingRoom(data) {
+  return request({
+    url: '/meetingRoom/update',
+    method: 'put',
+    data
+  })
+}
+
+export function deleteMeetingRoom(id) {
+  return request({
+    url: `/meetingRoom/deleteById/${id}`,
+    method: 'delete'
+  })
+}

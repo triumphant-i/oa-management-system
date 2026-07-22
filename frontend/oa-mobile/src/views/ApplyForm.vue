@@ -547,7 +547,13 @@ const submitting = ref(false)
 // ===== 选项数据 =====
 const leaveTypes = ['年假', '事假', '病假', '婚假', '产假', '陪产假', '丧假', '调休']
 const expenseTypes = ['交通费', '餐饮费', '住宿费', '办公用品', '通讯费', '其他']
-const cardTypes = ['上班签到', '下班签退', '忘记打卡']
+const cardTypes = ['迟到补卡', '早退补卡', '漏签补卡']
+
+const cardTypeMap = {
+  '迟到补卡': 'late',
+  '早退补卡': 'early',
+  '漏签补卡': 'miss'
+}
 
 // ===== 审批流程配置 =====
 const flowStepsMap = {
@@ -905,34 +911,34 @@ const onSubmit = async () => {
   const submitData = {
     approvalType: applyType.value,
     title: formData.value.title,
-    content: formData.value.reason || formData.value.destCity || '',
-    applicantId: employeeId.value,
-    applicantName: employeeName.value,
+    content: formData.value.reason || '',
+    // 请假/出差 - 日期转换为后端格式 (yyyy-MM-dd'T'HH:mm:ss)
+    startTime: (formData.value.startDate && applyType.value !== 'overtime') 
+      ? `${formData.value.startDate}T00:00:00` 
+      : null,
+    endTime: (formData.value.endDate && applyType.value !== 'overtime') 
+      ? `${formData.value.endDate}T23:59:59` 
+      : null,
     // 请假
     leaveType: formData.value.leaveType,
-    startDate: formData.value.startDate,
-    endDate: formData.value.endDate,
-    totalDays: formData.value.totalDays,
     // 出差
     destCity: formData.value.destCity,
     // 加班
     workDate: formData.value.workDate,
-    startTime: formData.value.startTime,
-    endTime: formData.value.endTime,
-    totalHours: formData.value.totalHours,
+    startTimeOnly: formData.value.startTime,
+    endTimeOnly: formData.value.endTime,
     // 报销
     expenseType: formData.value.expenseType,
-    amount: formData.value.amount,
+    amount: parseFloat(formData.value.amount) || null,
     expenseDate: formData.value.expenseDate,
     // 采购
     goodsName: formData.value.goodsName,
-    quantity: formData.value.quantity,
-    unitPrice: formData.value.unitPrice,
-    totalAmount: formData.value.totalAmount,
+    quantity: parseInt(formData.value.quantity) || null,
+    unitPrice: parseFloat(formData.value.unitPrice) || null,
     // 补卡
     cardDate: formData.value.cardDate,
     cardTime: formData.value.cardTime,
-    cardType: formData.value.cardType
+    cardType: cardTypeMap[formData.value.cardType] || formData.value.cardType
   }
 
   // ===== 调用后端接口 =====
@@ -961,7 +967,7 @@ const onSubmit = async () => {
 
 onMounted(() => {
   employeeId.value = parseInt(localStorage.getItem('employeeId')) || 1
-  employeeName.value = localStorage.getItem('username') || '张工'
+  employeeName.value = localStorage.getItem('name') || localStorage.getItem('username') || '张工'
   
   const now = new Date()
   formData.value.title = `${pageTitle.value} - ${now.getFullYear()}年${String(now.getMonth()+1).padStart(2,'0')}月${String(now.getDate()).padStart(2,'0')}日`

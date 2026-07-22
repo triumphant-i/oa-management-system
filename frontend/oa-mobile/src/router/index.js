@@ -9,6 +9,7 @@ import Meeting from '../views/Meeting.vue'
 import MeetingDetail from '../views/MeetingDetail.vue'
 import NoticeDetail from '../views/NoticeDetail.vue'
 import MeetingReserve from '../views/MeetingReserve.vue'
+import MeetingControl from '../views/MeetingControl.vue'
 import EmployeeManage from '../views/EmployeeManage.vue'
 import Department from '../views/Department.vue'
 import Apply from '../views/Apply.vue'
@@ -37,6 +38,7 @@ const routes = [
   { path: '/meeting', name: 'Meeting', component: Meeting },
   { path: '/meeting/detail/:id', name: 'MeetingDetail', component: MeetingDetail },
   { path: '/meeting/reserve/:id?', name: 'MeetingReserve', component: MeetingReserve },
+  { path: '/meeting/control/:id', name: 'MeetingControl', component: MeetingControl },
   { path: '/custom', name: 'Custom', component: Custom },
   { path: '/system', name: 'System', component: System },
   { path: '/message', name: 'Message', component: Message }

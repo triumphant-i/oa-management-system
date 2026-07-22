@@ -34,11 +34,26 @@ public class Message implements Serializable {
   @TableField("msg_type")
   private String msgType;
 
+  @TableField("event_type")
+  private String eventType;
+
+  @TableField("biz_type")
+  private String bizType;
+
+  @TableField("biz_id")
+  private Integer bizId;
+
   @TableField("related_id")
   private Integer relatedId;
 
   @TableField("is_read")
   private Integer isRead;
+
+  @TableField("is_todo")
+  private Integer isTodo;
+
+  @TableField("jump_url")
+  private String jumpUrl;
 
   @TableField("is_top")
   private Integer isTop;
@@ -50,6 +65,9 @@ public class Message implements Serializable {
 
   @TableField("read_time")
   private LocalDateTime readTime;
+
+  @TableField("update_time")
+  private LocalDateTime updateTime;
 
   @TableField(exist = false)
   private String senderAvatar;
@@ -118,6 +136,30 @@ public class Message implements Serializable {
     this.msgType = msgType;
   }
 
+  public String getEventType() {
+    return eventType;
+  }
+
+  public void setEventType(String eventType) {
+    this.eventType = eventType;
+  }
+
+  public String getBizType() {
+    return bizType;
+  }
+
+  public void setBizType(String bizType) {
+    this.bizType = bizType;
+  }
+
+  public Integer getBizId() {
+    return bizId;
+  }
+
+  public void setBizId(Integer bizId) {
+    this.bizId = bizId;
+  }
+
   public Integer getRelatedId() {
     return relatedId;
   }
@@ -132,6 +174,22 @@ public class Message implements Serializable {
 
   public void setIsRead(Integer isRead) {
     this.isRead = isRead;
+  }
+
+  public Integer getIsTodo() {
+    return isTodo;
+  }
+
+  public void setIsTodo(Integer isTodo) {
+    this.isTodo = isTodo;
+  }
+
+  public String getJumpUrl() {
+    return jumpUrl;
+  }
+
+  public void setJumpUrl(String jumpUrl) {
+    this.jumpUrl = jumpUrl;
   }
 
   public Integer getIsTop() {
@@ -164,6 +222,14 @@ public class Message implements Serializable {
 
   public void setReadTime(LocalDateTime readTime) {
     this.readTime = readTime;
+  }
+
+  public LocalDateTime getUpdateTime() {
+    return updateTime;
+  }
+
+  public void setUpdateTime(LocalDateTime updateTime) {
+    this.updateTime = updateTime;
   }
 
   public String getSenderAvatar() {

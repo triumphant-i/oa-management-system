@@ -1,9 +1,10 @@
 -- ==========================================
--- OA管理系统完整数据库脚本（合并版）
--- 整合所有SQL文件，确保与现有数据库等价
--- 创建时间: 2026-07-21
+-- OA管理系统完整数据库脚本（最终版）
+-- 整合add_oa_system.sql和oa_system_merged.sql
+-- 创建时间: 2026-07-22
 -- 适配版本: SpringBoot 2.7.18 + Vue 3
 -- 技术栈: MySQL 8.0+
+-- 密码统一为: 123456
 -- ==========================================
 
 SET FOREIGN_KEY_CHECKS = 0;
@@ -92,7 +93,7 @@ CREATE TABLE `t_approval` (
   `card_date` VARCHAR(20) DEFAULT NULL COMMENT '补卡日期',
   `card_time` VARCHAR(20) DEFAULT NULL COMMENT '补卡时间',
   `card_type` VARCHAR(50) DEFAULT NULL COMMENT '补卡类型（late/early/miss）',
-  `status` VARCHAR(20) DEFAULT 'pending' COMMENT '状态（pending/approved/rejected/withdrawn）',
+  `status` VARCHAR(20) DEFAULT '待审批' COMMENT '状态（待审批/已通过/已拒绝/已撤回）',
   `approver_id` INT(11) DEFAULT NULL COMMENT '审批人ID',
   `approver_name` VARCHAR(50) DEFAULT NULL COMMENT '审批人姓名',
   `approve_time` DATETIME DEFAULT NULL COMMENT '审批时间',
@@ -240,17 +241,28 @@ CREATE TABLE `t_message` (
   `title` VARCHAR(200) DEFAULT NULL COMMENT '消息标题',
   `content` TEXT COMMENT '消息内容',
   `msg_type` VARCHAR(50) DEFAULT NULL COMMENT '消息类型',
+  `event_type` VARCHAR(50) DEFAULT NULL COMMENT '事件类型（SUBMITTED/APPROVED_NODE/APPROVED_FINAL/REJECTED/WITHDRAWN/CC_ADDED等）',
+  `biz_type` VARCHAR(50) DEFAULT 'approval' COMMENT '业务类型（approval/workflow/document等）',
+  `biz_id` INT(11) DEFAULT NULL COMMENT '关联的业务单据ID（如审批单ID）',
   `related_id` INT(11) DEFAULT NULL COMMENT '关联ID（申请ID/会议ID等）',
   `is_read` TINYINT(1) DEFAULT 0 COMMENT '是否已读',
+  `is_todo` TINYINT(1) DEFAULT 0 COMMENT '是否计入待办角标（1=是，0=否）',
+  `jump_url` VARCHAR(200) DEFAULT NULL COMMENT '跳转标识（前端根据此路由跳转，如 /approval/detail/123）',
   `is_top` TINYINT(1) DEFAULT 0 COMMENT '是否置顶',
   `status` VARCHAR(20) DEFAULT '正常' COMMENT '状态',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `read_time` DATETIME DEFAULT NULL COMMENT '阅读时间',
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_receiver_id` (`receiver_id`),
   KEY `idx_is_read` (`is_read`),
   KEY `idx_msg_type` (`msg_type`),
-  KEY `idx_create_time` (`create_time`)
+  KEY `idx_create_time` (`create_time`),
+  KEY `idx_receiver_is_read` (`receiver_id`, `is_read`),
+  KEY `idx_receiver_is_todo` (`receiver_id`, `is_todo`),
+  KEY `idx_receiver_biz_type` (`receiver_id`, `biz_type`),
+  KEY `idx_event_create_time` (`event_type`, `create_time`),
+  KEY `idx_biz_id` (`biz_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息表';
 
 -- ==========================================
@@ -393,86 +405,77 @@ DELIMITER ;
 -- 初始化数据
 -- ==========================================
 
--- 1. 部门数据
-INSERT INTO `t_department` (`name`, `manager_name`, `manager_phone`, `parent_id`, `level`, `path`, `description`) VALUES
-('技术部', '张三', '13800138001', 0, 1, '1', '负责技术研发'),
-('产品部', '李四', '13800138002', 0, 1, '2', '负责产品设计'),
-('运营部', '王五', '13800138003', 0, 1, '3', '负责运营推广'),
-('人事部', '赵六', '13800138004', 0, 1, '4', '负责人力资源'),
-('财务部', '钱七', '13800138005', 0, 1, '5', '负责财务管理');
+-- 1. 部门数据（manager_id已根据员工数据设置）
+INSERT INTO `t_department` (`name`, `manager_id`, `manager_name`, `manager_phone`, `parent_id`, `level`, `path`, `description`) VALUES
+('技术部', 2, '张三', '13800138001', 0, 1, '1', '负责技术研发'),
+('产品部', 3, '李四', '13800138002', 0, 1, '2', '负责产品设计'),
+('运营部', 4, '王五', '13800138003', 0, 1, '3', '负责运营推广'),
+('人事部', 5, '赵六', '13800138004', 0, 1, '4', '负责人力资源'),
+('财务部', 6, '钱七', '13800138005', 0, 1, '5', '负责财务管理');
 
 -- 2. 员工数据（密码均为 123456，格式：salt$MD5(salt+password)）
 INSERT INTO `t_employee` (`username`, `password`, `name`, `gender`, `phone`, `email`, `department_id`, `position`, `status`, `role`, `join_date`) VALUES
-('admin', 'abc12345$c0f2f927f5ae81a7bf94d1f7589d9690', '系统管理员', '男', '13800000000', 'admin@oa.com', 1, '系统管理员', '在职', 'SYSTEM_ADMIN', '2026-01-01'),
-('zhangsan', 'def67890$d2271a28b363b359bb9616e44f83b34b', '张三', '男', '13800138001', 'zhangsan@oa.com', 1, '技术总监', '在职', 'DEPARTMENT_MANAGER', '2026-01-01'),
-('lisi', 'ghi11111$fa73a130cd9d19c93d9e59fda61c858f', '李四', '女', '13800138002', 'lisi@oa.com', 2, '产品总监', '在职', 'DEPARTMENT_MANAGER', '2026-01-01'),
-('wangwu', 'jkl22222$373a0505323dc9ab069b5d12b712c75b', '王五', '男', '13800138003', 'wangwu@oa.com', 3, '运营总监', '在职', 'EMPLOYEE', '2026-01-01'),
-('zhaoliu', 'mno33333$95fa64481914688390270bf5675507ea', '赵六', '女', '13800138004', 'zhaoliu@oa.com', 4, '人事主管', '在职', 'EMPLOYEE', '2026-01-01'),
-('qianqi', 'pqr44444$47ef932e3135ec8c38c88f41fc5bd8a9', '钱七', '男', '13800138005', 'qianqi@oa.com', 5, '财务主管', '在职', 'EMPLOYEE', '2026-01-01'),
-('emp001', 'stu55555$aa0e74a56e8bfcb3441a37486d0fc723', '员工一', '男', '13800138011', 'emp001@oa.com', 1, 'Java开发工程师', '在职', 'EMPLOYEE', '2026-03-01'),
-('emp002', 'vwx66666$f02991f140475a65833a29fab6ffce0a', '员工二', '女', '13800138012', 'emp002@oa.com', 1, '前端开发工程师', '在职', 'EMPLOYEE', '2026-03-01'),
-('emp003', 'yza77777$c1d8d356f3781e1de72764d89606bf20', '员工三', '男', '13800138013', 'emp003@oa.com', 2, '产品经理', '在职', 'EMPLOYEE', '2026-03-01'),
+('admin', '117b95a6$51ca19c4df60f4d61ba99ef493ac1097', '系统管理员', '男', '13800000000', 'admin@oa.com', 1, '系统管理员', '在职', 'SYSTEM_ADMIN', '2026-01-01'),
+('zhangsan', 'adb046e2$2dc92ba0cfdaf0a1ca7c4c0a5643bb0d', '张三', '男', '13800138001', 'zhangsan@oa.com', 1, '技术总监', '在职', 'DEPARTMENT_MANAGER', '2026-01-01'),
+('lisi', '2a20fba1$c85ccc96e3613bfbc1a26553927ac308', '李四', '女', '13800138002', 'lisi@oa.com', 2, '产品总监', '在职', 'DEPARTMENT_MANAGER', '2026-01-01'),
+('wangwu', 'f4c5a0f5$7311b2b39797f532ed34d0a677ba1ca0', '王五', '男', '13800138003', 'wangwu@oa.com', 3, '运营总监', '在职', 'EMPLOYEE', '2026-01-01'),
+('zhaoliu', 'f6f8a323$ec58ad05e08b696a900d85e4e3993a10', '赵六', '女', '13800138004', 'zhaoliu@oa.com', 4, '人事主管', '在职', 'EMPLOYEE', '2026-01-01'),
+('qianqi', '8f6af415$3a867c792bff55aa043720ec714f5aba', '钱七', '男', '13800138005', 'qianqi@oa.com', 5, '财务主管', '在职', 'EMPLOYEE', '2026-01-01'),
+('emp001', 'f4ab09ca$587356ebf25fe7eaf41affe8b97e8a61', '员工一', '男', '13800138011', 'emp001@oa.com', 1, 'Java开发工程师', '在职', 'EMPLOYEE', '2026-03-01'),
+('emp002', 'dcb68990$1a892bd3ca9e07b490b0fbc521cce252', '员工二', '女', '13800138012', 'emp002@oa.com', 1, '前端开发工程师', '在职', 'EMPLOYEE', '2026-03-01'),
+('emp003', '530e80b1$74581ab20d887519370591843b3f874b', '员工三', '男', '13800138013', 'emp003@oa.com', 2, '产品经理', '在职', 'EMPLOYEE', '2026-03-01'),
 ('emp004', 'bcd88888$e772397f7bf3db6d9cc7ff5720cb39a2', '员工四', '女', '13800138014', 'emp004@oa.com', 3, '运营专员', '在职', 'EMPLOYEE', '2026-03-01');
 
--- 3. 回填部门负责人ID
-UPDATE `t_department` d SET `manager_id` = (
-    SELECT `id` FROM `t_employee` e 
-    WHERE e.`department_id` = d.`id` AND e.`role` = 'DEPARTMENT_MANAGER'
-    LIMIT 1
-) WHERE `manager_id` IS NULL;
-
--- 4. 设置运营部、人事部、财务部负责人（王五=4, 赵六=5, 钱七=6）
-UPDATE `t_department` SET `manager_id` = 4 WHERE `id` = 3;
-UPDATE `t_department` SET `manager_id` = 5 WHERE `id` = 4;
-UPDATE `t_department` SET `manager_id` = 6 WHERE `id` = 5;
-
--- 4. 审批数据（状态使用英文：pending/approved/rejected/withdrawn，补卡类型使用英文：late/early/miss）
+-- 3. 审批数据（状态使用中文：待审批/已通过/已拒绝/已撤回，补卡类型使用英文：late/early/miss）
 INSERT INTO `t_approval` (`applicant_id`, `applicant_name`, `applicant_department_id`, `approval_type`, `title`, `content`, `start_time`, `end_time`, `amount`, `leave_type`, `dest_city`, `work_date`, `start_time_only`, `end_time_only`, `expense_type`, `expense_date`, `goods_name`, `quantity`, `unit_price`, `card_date`, `card_time`, `card_type`, `status`, `approver_id`, `approver_name`, `approve_time`, `approve_reason`) VALUES
-(7, '员工一', 1, 'leave', '年假申请', '计划休假一天', '2026-07-21 09:00:00', '2026-07-21 18:00:00', NULL, '年假', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'pending', NULL, NULL, NULL, NULL),
-(7, '员工一', 1, 'business', '北京出差', '前往北京客户现场', '2026-07-25 09:00:00', '2026-07-27 18:00:00', NULL, NULL, '北京', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'approved', 1, '系统管理员', '2026-07-16 10:30:00', '同意出差'),
-(8, '员工二', 1, 'overtime', '周末加班', '项目赶进度', NULL, NULL, NULL, NULL, NULL, '2026-07-26', '18:00', '20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'pending', NULL, NULL, NULL, NULL),
-(9, '员工三', 2, 'reimburse', '交通费报销', '出差交通费', NULL, NULL, 1500.00, NULL, NULL, NULL, NULL, NULL, '交通费', '2026-07-15', NULL, NULL, NULL, NULL, NULL, NULL, 'approved', 1, '系统管理员', '2026-07-16 11:00:00', '同意报销'),
-(10, '员工四', 3, 'purchase', '办公用品采购', '采购打印纸', NULL, NULL, 500.00, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '打印纸', 10, 50.00, NULL, NULL, NULL, 'pending', NULL, NULL, NULL, NULL),
-(7, '员工一', 1, 'card', '迟到补卡', '因交通拥堵迟到', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-07-19', '09:15', 'late', 'approved', 2, '张三', '2026-07-19 10:00:00', '情况属实');
+(7, '员工一', 1, 'leave', '年假申请', '计划休假一天', '2026-07-21 09:00:00', '2026-07-21 18:00:00', NULL, '年假', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '待审批', NULL, NULL, NULL, NULL),
+(7, '员工一', 1, 'business', '北京出差', '前往北京客户现场', '2026-07-25 09:00:00', '2026-07-27 18:00:00', NULL, NULL, '北京', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '已通过', 1, '系统管理员', '2026-07-22 09:46:58', '同意出差'),
+(8, '员工二', 1, 'overtime', '周末加班', '项目赶进度', NULL, NULL, NULL, NULL, NULL, '2026-07-26', '18:00', '20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '待审批', NULL, NULL, NULL, NULL),
+(9, '员工三', 2, 'reimburse', '交通费报销', '出差交通费', NULL, NULL, 1500.00, NULL, NULL, NULL, NULL, NULL, '交通费', '2026-07-15', NULL, NULL, NULL, NULL, NULL, NULL, '已通过', 1, '系统管理员', '2026-07-22 10:24:45', '同意报销'),
+(10, '员工四', 3, 'purchase', '办公用品采购', '采购打印纸', NULL, NULL, 500.00, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '打印纸', 10, 50.00, NULL, NULL, NULL, '待审批', NULL, NULL, NULL, NULL),
+(7, '员工一', 1, 'card', '迟到补卡', '因交通拥堵迟到', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-07-19', '09:15', 'late', '已通过', 2, '张三', '2026-07-22 09:46:58', '情况属实');
 
--- 5. 公告数据
+-- 4. 公告数据
 INSERT INTO `t_announcement` (`title`, `content`, `publisher_id`, `publisher_name`, `category`, `priority`, `is_top`, `status`) VALUES
 ('年度体检通知', '公司将于8月组织年度体检，请各位同事安排时间。', 1, '系统管理员', '通知', '重要', 1, '已发布'),
 ('新版OA系统上线', '新版OA系统已正式上线，请大家积极使用。', 1, '系统管理员', '通知', '紧急', 1, '已发布'),
 ('信息安全通知', '请各位同事注意信息安全，定期修改密码。', 4, '王五', '制度', '重要', 0, '已发布');
 
--- 6. 考勤数据
+-- 5. 考勤数据
 INSERT INTO `t_attendance` (`employee_id`, `employee_name`, `date`, `check_in_time`, `check_out_time`, `status`, `remark`) VALUES
 (7, '员工一', '2026-07-15', '2026-07-15 08:55:00', '2026-07-15 18:10:00', '正常', NULL),
 (7, '员工一', '2026-07-16', '2026-07-16 09:15:00', '2026-07-16 18:00:00', '迟到', '交通拥堵'),
 (8, '员工二', '2026-07-15', '2026-07-15 08:50:00', '2026-07-15 18:20:00', '正常', NULL),
 (8, '员工二', '2026-07-16', '2026-07-16 09:00:00', '2026-07-16 18:05:00', '正常', NULL);
 
--- 7. 会议室数据
+-- 6. 会议室数据
 INSERT INTO `t_meeting_room` (`name`, `capacity`, `equipment`, `location`, `status`) VALUES
 ('第一会议室', 10, '投影仪、白板', '3楼301', '可用'),
 ('第二会议室', 20, '投影仪、视频会议', '3楼302', '可用'),
 ('培训室', 50, '投影仪、音响', '5楼501', '可用'),
 ('VIP会议室', 15, '投影仪、视频会议、茶水', '6楼601', '可用');
 
--- 8. 会议预约数据
+-- 7. 会议预约数据
 INSERT INTO `t_meeting` (`title`, `room_id`, `room_name`, `organizer_id`, `organizer_name`, `participants`, `participant_ids`, `start_time`, `end_time`, `status`, `remark`) VALUES
 ('项目启动会', 1, '第一会议室', 7, '员工一', '员工一,员工二,员工三', '7,8,9', '2026-07-21 09:00:00', '2026-07-21 11:00:00', '已预约', '新项目启动'),
 ('部门周例会', 2, '第二会议室', 2, '张三', '技术部全体', '1,2,7,8', '2026-07-22 14:00:00', '2026-07-22 16:00:00', '已预约', '周例会');
 
--- 9. 消息数据（包含related_id字段）
-INSERT INTO `t_message` (`sender_id`, `sender_name`, `receiver_id`, `receiver_name`, `title`, `content`, `msg_type`, `related_id`, `is_read`) VALUES
-(1, '系统管理员', 7, '员工一', '申请已通过', '您的出差申请已通过', 'APPROVAL', 2, 0),
-(2, '张三', 7, '员工一', '补卡已通过', '您的迟到补卡已通过', 'APPROVAL', 6, 1);
+-- 8. 消息数据（包含event_type、biz_type、biz_id、is_todo、jump_url字段）
+INSERT INTO `t_message` (`sender_id`, `sender_name`, `receiver_id`, `receiver_name`, `title`, `content`, `msg_type`, `event_type`, `biz_type`, `biz_id`, `related_id`, `is_read`, `is_todo`, `jump_url`) VALUES
+(1, '系统管理员', 7, '员工一', '申请已通过', '您的出差申请已通过', 'APPROVAL', 'APPROVED_FINAL', 'approval', 2, 2, 0, 0, '/approval/detail/2'),
+(2, '张三', 7, '员工一', '补卡已通过', '您的迟到补卡已通过', 'APPROVAL', 'APPROVED_FINAL', 'approval', 6, 6, 1, 0, '/approval/detail/6'),
+(1, '系统管理员', 7, '员工一', '申请已通过', '您的请假申请已由张三审批通过。', 'APPROVAL', 'APPROVED_FINAL', 'approval', 1, 1, 0, 0, '/approval/detail/1'),
+(1, '系统管理员', 8, '员工二', '申请已通过', '您的加班申请已由系统管理员审批通过。', 'APPROVAL', 'APPROVED_FINAL', 'approval', 3, 3, 0, 0, '/approval/detail/3'),
+(2, '张三', 1, '系统管理员', '会议信息变更通知', '您参加的会议【部门周例会】信息已更新：开始时间变更为「2026-07-22 10:25」；结束时间变更为「2026-07-22 10:30」；请关注最新安排。', 'MEETING', NULL, 'approval', NULL, NULL, 0, 0, NULL);
 
--- 10. 字典数据（补卡类型使用英文值）
+-- 9. 字典数据（补卡类型使用英文值）
 INSERT INTO `t_dict` (`key`, `name`, `options`) VALUES
 ('leave_type', '请假类型', '[{"label":"事假","value":"事假"},{"label":"病假","value":"病假"},{"label":"年假","value":"年假"},{"label":"调休","value":"调休"},{"label":"婚假","value":"婚假"},{"label":"产假","value":"产假"},{"label":"丧假","value":"丧假"}]'),
 ('expense_type', '报销类型', '[{"label":"交通费","value":"交通费"},{"label":"住宿费","value":"住宿费"},{"label":"餐饮费","value":"餐饮费"},{"label":"办公费","value":"办公费"},{"label":"差旅费","value":"差旅费"},{"label":"其他","value":"其他"}]'),
 ('card_type', '补卡类型', '[{"label":"迟到补卡","value":"late"},{"label":"早退补卡","value":"early"},{"label":"漏签补卡","value":"miss"}]'),
-('approval_status', '审批状态', '[{"label":"待审批","value":"pending"},{"label":"已通过","value":"approved"},{"label":"已拒绝","value":"rejected"},{"label":"已撤回","value":"withdrawn"}]');
+('approval_status', '审批状态', '[{"label":"待审批","value":"待审批"},{"label":"已通过","value":"已通过"},{"label":"已拒绝","value":"已拒绝"},{"label":"已撤回","value":"已撤回"}]');
 
--- 11. 角色数据
+-- 10. 角色数据
 INSERT INTO `t_role` (`name`, `code`, `desc`, `icon`, `color`, `permissions`) VALUES
 ('系统管理员', 'SYSTEM_ADMIN', '系统管理员，拥有所有权限', 'admin', '#ff6b6b', '["user:manage","department:manage","approval:all","announcement:manage","meeting:manage","attendance:manage"]'),
 ('部门主管', 'DEPARTMENT_MANAGER', '部门主管，管理本部门事务', 'manager', '#4ecdc4', '["user:department","approval:department","announcement:view","meeting:reserve","attendance:view"]'),
@@ -485,3 +488,19 @@ SELECT '管理员账号：admin / 123456' AS '登录信息';
 SELECT '部门主管：zhangsan / 123456（技术部）' AS '登录信息';
 SELECT '部门主管：lisi / 123456（产品部）' AS '登录信息';
 SELECT '普通员工：emp001 / 123456' AS '登录信息';
+
+-- ==========================================
+-- 消息事件类型字典参考
+-- ==========================================
+/*
+事件类型表：
+
+| 事件类型        | 触发时机                             | 通知接收人                 | 是否计入待办 | 文案要点                                    |
+|-----------------|--------------------------------------|----------------------------|------------|-------------------------------------------|
+| SUBMITTED       | 发起人提交单据                       | 第一级审批人               | 是         | "你有一条新的待审批单据"                   |
+| APPROVED_NODE   | 非末级节点同意，流程流转到下一级     | 下一级审批人               | 是         | "有新的待审批单据"                         |
+| APPROVED_FINAL  | 末级节点同意，流程结束               | 发起人（+抄送人）          | 否，仅提醒 | "你的XX单据已审批通过"                     |
+| REJECTED        | 任一节点审批人驳回                   | 发起人                     | 否，仅提醒 | "你的单据被驳回，原因：xx"                 |
+| WITHDRAWN       | 发起人撤回                           | 当前节点审批人             | 否，失效   | "该单据已被撤回"                           |
+| CC_ADDED        | 抄送人列表变更（未来支持）           | 新增的抄送人               | 否，仅提醒 | "你被添加为该单据的抄送人"                 |
+*/

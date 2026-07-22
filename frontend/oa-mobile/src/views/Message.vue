@@ -185,7 +185,7 @@ const loadMessages = async () => {
   try {
     const res = await getMessageList()
     if (res.code === 0 && res.data) {
-      messageList.value = Array.isArray(res.data) ? res.data : []
+      messageList.value = Array.isArray(res.data.records) ? res.data.records : (Array.isArray(res.data) ? res.data : [])
     }
   } catch (error) {
     console.error('加载消息失败:', error)

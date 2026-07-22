@@ -1,6 +1,6 @@
 package com.southwind.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.southwind.entity.Meeting;
 import com.southwind.entity.MeetingRoom;
@@ -115,16 +115,16 @@ public class MeetingServiceImpl extends ServiceImpl<MeetingMapper, Meeting> impl
                 !oldMeeting.getEndTime().equals(meeting.getEndTime());
 
         if (needCheck) {
-            // 4. 使用存储过程检查会议室可用性（排除自己）
-            LambdaQueryWrapper<Meeting> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(Meeting::getRoomId, meeting.getRoomId())
-                    .eq(Meeting::getStatus, "已预约")
-                    .ne(Meeting::getId, meeting.getId())
+            // 4. 使用QueryWrapper检查会议室可用性（排除自己）
+            QueryWrapper<Meeting> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("room_id", meeting.getRoomId())
+                    .eq("status", "已预约")
+                    .ne("id", meeting.getId())
                     .and(wrapper -> wrapper
-                            .or(w -> w.between(Meeting::getStartTime, meeting.getStartTime(), meeting.getEndTime()))
-                            .or(w -> w.between(Meeting::getEndTime, meeting.getStartTime(), meeting.getEndTime()))
-                            .or(w -> w.lt(Meeting::getStartTime, meeting.getStartTime())
-                                    .gt(Meeting::getEndTime, meeting.getEndTime()))
+                            .or(w -> w.between("start_time", meeting.getStartTime(), meeting.getEndTime()))
+                            .or(w -> w.between("end_time", meeting.getStartTime(), meeting.getEndTime()))
+                            .or(w -> w.lt("start_time", meeting.getStartTime())
+                                    .gt("end_time", meeting.getEndTime()))
                     );
 
             Integer conflictCount = this.baseMapper.selectCount(queryWrapper).intValue();

@@ -19,4 +19,23 @@ public interface ApprovalService extends IService<Approval> {
      * 仅当申请人为本人且状态为"待审批"时撤回，返回受影响行数
      */
     int withdrawIfApplicantPending(Integer id, Integer applicantId, LocalDateTime updateTime);
+
+    /**
+     * 提交审批申请（包含事件发布）
+     * 自动查询第一级审批人（部门主管），发布 SUBMITTED 事件
+     */
+    Approval submitApproval(Approval approval);
+
+    /**
+     * 审批处理（通过/拒绝）（包含事件发布）
+     * 通过时发布 APPROVED_FINAL 事件（暂时；后续工作流多级后改为区分APPROVED_NODE）
+     * 拒绝时发布 REJECTED 事件
+     */
+    int approveApproval(Approval approval, boolean approved);
+
+    /**
+     * 撤回审批申请（包含事件发布）
+     * 发布 WITHDRAWN 事件，通知当前审批人
+     */
+    int withdrawApproval(Integer id, Integer applicantId, LocalDateTime updateTime, Integer approverId, String approverName);
 }

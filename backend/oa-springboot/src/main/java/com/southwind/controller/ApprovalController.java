@@ -72,23 +72,14 @@ public class ApprovalController {
         approval.setStatus(STATUS_PENDING);
         approval.setCreateTime(LocalDateTime.now());
         approval.setUpdateTime(LocalDateTime.now());
-        boolean save = approvalService.save(approval);
-        if (!save) return ResultVOUtil.fail("提交失败");
+        
+        // 调用新的 Service 方法，自动发布 SUBMITTED 事件
+        Approval result = approvalService.submitApproval(approval);
+        if (result == null || result.getId() == null) {
+            return ResultVOUtil.fail("提交失败");
+        }
 
-        Message message = new Message();
-        message.setSenderId(currentUser.getUserId());
-        message.setSenderName(approval.getApplicantName());
-        message.setReceiverId(currentUser.getUserId());
-        message.setReceiverName(approval.getApplicantName());
-        message.setTitle("申请提交成功");
-        message.setContent("您的" + getApprovalTypeName(approval.getApprovalType()) + "已提交，等待审批中。");
-        message.setMsgType("APPROVAL");
-        message.setRelatedId(approval.getId());
-        message.setIsRead(0);
-        message.setIsTop(0);
-        messageService.sendMessage(message);
-
-        return ResultVOUtil.success(approval.getId());
+        return ResultVOUtil.success(result.getId());
     }
 
     private String getApprovalTypeName(String type) {
@@ -313,7 +304,7 @@ public class ApprovalController {
         updateApproval.setApproveTime(LocalDateTime.now());
         updateApproval.setUpdateTime(LocalDateTime.now());
 
-        int affected = approvalService.updateApprovalIfPending(updateApproval);
+        int affected = approvalService.approveApproval(updateApproval, STATUS_APPROVED.equals(targetStatus));
         if (affected == 0) {
             return ResultVOUtil.fail("申请状态已变更，请刷新后重试");
         }
@@ -327,39 +318,32 @@ public class ApprovalController {
             processCardApproval(existing);
         }
 
-        // 6. 发送审批结果通知
-        Message message = new Message();
-        message.setSenderId(currentUser.getUserId());
-        message.setSenderName(currentUser.getName() != null ? currentUser.getName() : currentUser.getUsername());
-        message.setReceiverId(existing.getApplicantId());
-        message.setReceiverName(existing.getApplicantName());
-
-        if (STATUS_APPROVED.equals(targetStatus)) {
-            message.setTitle("申请已通过");
-            message.setContent("您的" + getApprovalTypeName(existing.getApprovalType()) + "已由" + message.getSenderName() + "审批通过。");
-        } else {
-            message.setTitle("申请已拒绝");
-            String reason = approval.getApproveReason() != null && !approval.getApproveReason().isEmpty() 
-                ? "，理由：" + approval.getApproveReason() 
-                : "";
-            message.setContent("您的" + getApprovalTypeName(existing.getApprovalType()) + "已由" + message.getSenderName() + "拒绝" + reason + "。");
-        }
-        message.setMsgType("APPROVAL");
-        message.setRelatedId(existing.getId());
-        message.setIsRead(0);
-        message.setIsTop(0);
-        messageService.sendMessage(message);
-
+        // 注意：事件发布已在 Service 层的 approveApproval 方法中处理，这里无需再发送消息
         return ResultVOUtil.success(null);
     }
 
     /**
-     * 分页查询所有申请
+     * 分页查询所有申请（权限控制）
+     * 系统管理员：查看所有申请
+     * 部门主管：只查看本部门申请
+     * 普通员工：只能查看自己的申请
      */
     @GetMapping("/list/{page}/{size}")
     public ResultVO list(@PathVariable("page") Integer page, @PathVariable("size") Integer size) {
+        UserContext.UserInfo currentUser = UserContext.getCurrentUser();
+        if (currentUser == null) {
+            return ResultVOUtil.fail("未登录");
+        }
+
         Page<Approval> approvalPage = new Page<>(page, size);
         QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
+
+        if (currentUser.getRole() == RoleType.EMPLOYEE) {
+            queryWrapper.eq("applicant_id", currentUser.getUserId());
+        } else if (currentUser.getRole() == RoleType.DEPARTMENT_MANAGER) {
+            queryWrapper.eq("applicant_department_id", currentUser.getDepartmentId());
+        }
+
         queryWrapper.orderByDesc("create_time");
         Page<Approval> resultPage = approvalService.page(approvalPage, queryWrapper);
 
@@ -372,24 +356,48 @@ public class ApprovalController {
     }
 
     /**
-     * 根据状态查询
+     * 根据状态查询（权限控制）
      */
     @GetMapping("/findByStatus/{status}")
     public ResultVO findByStatus(@PathVariable("status") String status) {
+        UserContext.UserInfo currentUser = UserContext.getCurrentUser();
+        if (currentUser == null) {
+            return ResultVOUtil.fail("未登录");
+        }
+
         QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status", status);
+
+        if (currentUser.getRole() == RoleType.EMPLOYEE) {
+            queryWrapper.eq("applicant_id", currentUser.getUserId());
+        } else if (currentUser.getRole() == RoleType.DEPARTMENT_MANAGER) {
+            queryWrapper.eq("applicant_department_id", currentUser.getDepartmentId());
+        }
+
         queryWrapper.orderByDesc("create_time");
         List<Approval> list = approvalService.list(queryWrapper);
         return ResultVOUtil.success(list);
     }
 
     /**
-     * 根据类型查询
+     * 根据类型查询（权限控制）
      */
     @GetMapping("/findByType/{type}")
     public ResultVO findByType(@PathVariable("type") String type) {
+        UserContext.UserInfo currentUser = UserContext.getCurrentUser();
+        if (currentUser == null) {
+            return ResultVOUtil.fail("未登录");
+        }
+
         QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("approval_type", type);
+
+        if (currentUser.getRole() == RoleType.EMPLOYEE) {
+            queryWrapper.eq("applicant_id", currentUser.getUserId());
+        } else if (currentUser.getRole() == RoleType.DEPARTMENT_MANAGER) {
+            queryWrapper.eq("applicant_department_id", currentUser.getDepartmentId());
+        }
+
         queryWrapper.orderByDesc("create_time");
         List<Approval> list = approvalService.list(queryWrapper);
         return ResultVOUtil.success(list);
@@ -416,8 +424,17 @@ public class ApprovalController {
             return ResultVOUtil.fail("只能撤回待审批的申请");
         }
 
-        int affected = approvalService.withdrawIfApplicantPending(id, currentUser.getUserId(), LocalDateTime.now());
-        if (affected == 0) return ResultVOUtil.fail("申请状态已变更，请刷新后重试");
+        // 调用新的 Service 方法，自动发布 WITHDRAWN 事件
+        int affected = approvalService.withdrawApproval(
+            id, 
+            currentUser.getUserId(), 
+            LocalDateTime.now(),
+            approval.getApproverId(),  // 当前审批人
+            approval.getApproverName()  // 当前审批人名称
+        );
+        if (affected == 0) {
+            return ResultVOUtil.fail("申请状态已变更，请刷新后重试");
+        }
         return ResultVOUtil.success(null);
     }
 
