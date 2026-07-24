@@ -1,0 +1,60 @@
+{
+  "name": "审批系统状态设计规范",
+  "version": 1,
+  "description": "会签+串签混合流程的双状态字段UI设计，包含我的申请、审批中心、审批详情三个核心页面",
+  "data": [
+    {
+      "id": "page-my-applications",
+      "title": "我的申请（申请人视角）",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1753392000000,
+      "devMetadata": {
+        "htmlSrc": "pages/my-applications.html",
+        "interactions": []
+      },
+      "canvasData": {
+        "x": 0,
+        "y": 0,
+        "group": 0
+      }
+    },
+    {
+      "id": "page-approval-center",
+      "title": "审批中心（审批人视角）",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1753392000000,
+      "devMetadata": {
+        "htmlSrc": "pages/approval-center.html",
+        "interactions": []
+      },
+      "canvasData": {
+        "x": 430,
+        "y": 0,
+        "group": 0
+      }
+    },
+    {
+      "id": "page-approval-detail",
+      "title": "审批详情（会签+串签流程）",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1753392000000,
+      "devMetadata": {
+        "htmlSrc": "pages/approval-detail.html",
+        "interactions": []
+      },
+      "canvasData": {
+        "x": 860,
+        "y": 0,
+        "group": 0
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": true,
+    "deviceType": "mobile",
+    "projectName": "审批系统状态设计规范"
+  }
+}

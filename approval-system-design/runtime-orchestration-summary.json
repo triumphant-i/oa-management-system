@@ -1,0 +1,128 @@
+{
+  "skillProvenance": {
+    "name": "solo-design",
+    "version": "2026.07.24",
+    "version_source": "inline"
+  },
+  "project": {
+    "resolvedLane": "free_exploration",
+    "selectedIntentWorkflowRead": true,
+    "contextReadScope": {
+      "mainAgent": {
+        "forbiddenReads": ["other intent-workflows/**", "Sub-Agent implementation files before dispatch"]
+      },
+      "pageSubAgent": {
+        "allowedReads": ["current lane page runtime guide", "current lane dispatch contract excerpt", "current Page Packet", "supplementaryReads[] only"],
+        "forbiddenReads": ["SKILL.md full re-read", "other intent-workflows/**", "full runtime-orchestration-summary.json unless explicitly sliced"]
+      },
+      "readScopeLedgerWriter": "shared-runtime/deterministic-tooling/build-page-dispatch-manifest.mjs"
+    },
+    "contextRequirementsLoaded": [
+      {"path": "shared-runtime/runtime-boundaries/lane-runtime-contracts.md", "readStatus": "loaded", "bodyRead": true},
+      {"path": "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md", "readStatus": "loaded", "bodyRead": true},
+      {"path": "delivery-quality/page-rendering-quality-gate.md", "readStatus": "loaded", "bodyRead": true},
+      {"path": "delivery-quality/design-artifact-validation.md", "readStatus": "loaded", "bodyRead": true},
+      {"path": "delivery-quality/delivery-evidence-contract.md", "readStatus": "loaded", "bodyRead": true},
+      {"path": "visual-experience/visual-experience-guidelines.md", "readStatus": "loaded", "bodyRead": true}
+    ],
+    "validationRunDiscipline": {
+      "maxFullValidationRuns": 2,
+      "softWarningsTriggerRepair": false,
+      "blockingRepairMode": "targeted-once",
+      "forbiddenRepairTriggers": ["soft-warning-only", "provenance-warning-only", "style-warning-only"]
+    },
+    "lowValueCallWatchdog": {
+      "applies": true,
+      "noProgressSignals": ["no_tool_call", "no_artifact_diff", "no_structured_decision"],
+      "noProgressNextAction": "enter_readiness_or_blocked_summary"
+    },
+    "intentProfile": {
+      "caseFamily": "free_exploration",
+      "sourceType": "specification_document",
+      "routingReason": "New multi-page UI design from specification document, no existing .design project, no Library, no restore target. Mobile OA approval system with 3 pages."
+    },
+    "cssPreflightEvidence": {
+      "applies": true,
+      "status": "passed",
+      "command": "node {SKILL_DIR}/shared-runtime/deterministic-tooling/apply-html-head-contract.mjs e:\\oa-system\\approval-system-design\\colors_and_type.css e:\\oa-system\\approval-system-design\\.preflight\\preflight.html --title=Preflight --lang=zh-CN --prefix=oa",
+      "brandPrefix": "oa",
+      "checks": {
+        "themeVars": "present",
+        "semanticTokenFallback": "present",
+        "themeInline": "present",
+        "tailwindCdn": "present",
+        "htmlClass": "present",
+        "semanticMappings": "resolved"
+      },
+      "retryCount": 0,
+      "blockingReason": null
+    },
+    "creativeRecipe": {
+      "businessTone": "enterprise OA tool, professional and clear",
+      "layoutArchetype": "mobile card-list with status banners",
+      "visualSignature": "clean white cards on light gray, blue primary, semantic status colors",
+      "densityTarget": "balanced",
+      "avoidOneThing": "emoji as icons, neon gradients, decorative illustrations"
+    },
+    "styleContinuityAnchors": ["card border-radius 12px", "status color system", "font stack PingFang SC / Microsoft YaHei", "section spacing 16px", "banner gradient style"],
+    "pageCompletenessGate": {
+      "expectedPages": ["my-applications", "approval-center", "approval-detail"],
+      "requiredStates": [],
+      "requiredInteractions": [],
+      "requiredNavigation": [],
+      "missingAllowed": []
+    },
+    "dispatchPreflightManifest": [
+      {
+        "nodeId": "page-my-applications",
+        "packetType": "FreePagePacket",
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": ["pages/my-applications.html"]
+        }
+      },
+      {
+        "nodeId": "page-approval-center",
+        "packetType": "FreePagePacket",
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": ["pages/approval-center.html"]
+        }
+      },
+      {
+        "nodeId": "page-approval-detail",
+        "packetType": "FreePagePacket",
+        "toolPolicy": {
+          "todoWriteAllowed": false,
+          "validationScriptsAllowed": false,
+          "previewAllowed": false,
+          "helperScriptsAllowed": false,
+          "designFileWriteAllowed": false,
+          "allowedWritePaths": ["pages/approval-detail.html"]
+        }
+      }
+    ],
+    "expectedDispatches": [],
+    "defaultDeliverableVisibility": {
+      "applies": true,
+      "requiredVisibleRegions": [
+        {"htmlSrc": "pages/my-applications.html", "selector": ".stat-row", "label": "status statistics cards", "source": "user requirement"},
+        {"htmlSrc": "pages/my-applications.html", "selector": ".approval-list", "label": "application list with overallStatus", "source": "user requirement"},
+        {"htmlSrc": "pages/approval-center.html", "selector": ".stat-row", "label": "myActionStatus statistics", "source": "user requirement"},
+        {"htmlSrc": "pages/approval-center.html", "selector": ".approval-list", "label": "approval list with myActionStatus", "source": "user requirement"},
+        {"htmlSrc": "pages/approval-detail.html", "selector": ".status-banner", "label": "dual status banner (overallStatus + myActionStatus)", "source": "user requirement"},
+        {"htmlSrc": "pages/approval-detail.html", "selector": ".flow-timeline", "label": "enriched timeline with per-node myActionStatus", "source": "user requirement"}
+      ],
+      "hiddenAllowed": []
+    }
+  },
+  "pages": []
+}

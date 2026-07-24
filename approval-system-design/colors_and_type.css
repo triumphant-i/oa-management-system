@@ -1,0 +1,59 @@
+/* Approval System Design - OA Style Tokens */
+:root {
+  --oa-background: #f5f7fa;
+  --oa-foreground: #1d2129;
+  --oa-card: #ffffff;
+  --oa-card-foreground: #1d2129;
+  --oa-popover: #ffffff;
+  --oa-popover-foreground: #1d2129;
+  --oa-primary: #3677ef;
+  --oa-primary-foreground: #ffffff;
+  --oa-muted: #f2f3f5;
+  --oa-muted-foreground: #86909c;
+  --oa-border: #e5e6eb;
+  --oa-input: #ffffff;
+  --oa-ring: #3677ef;
+  --oa-radius-sm: 4px;
+  --oa-radius-md: 8px;
+  --oa-radius-lg: 12px;
+  --oa-state-pending: #ff6b35;
+  --oa-state-pending-bg: #fff8ef;
+  --oa-state-pending-border: #ffe0c2;
+  --oa-state-success: #00b894;
+  --oa-state-success-bg: #f0fff4;
+  --oa-state-success-border: #b2f2d5;
+  --oa-state-error: #e17055;
+  --oa-state-error-bg: #fff0f0;
+  --oa-state-error-border: #ffc9c9;
+  --oa-state-info: #3677ef;
+  --oa-state-info-bg: #e8f0ff;
+  --oa-state-info-border: #b5d0ff;
+  --oa-state-withdrawn: #86909c;
+  --oa-state-withdrawn-bg: #f7f8fa;
+  --oa-state-withdrawn-border: #e5e6eb;
+}
+
+@theme inline {
+  --color-background: var(--oa-background);
+  --color-foreground: var(--oa-foreground);
+  --color-card: var(--oa-card);
+  --color-card-foreground: var(--oa-card-foreground);
+  --color-popover: var(--oa-popover);
+  --color-popover-foreground: var(--oa-popover-foreground);
+  --color-primary: var(--oa-primary);
+  --color-primary-foreground: var(--oa-primary-foreground);
+  --color-muted: var(--oa-muted);
+  --color-muted-foreground: var(--oa-muted-foreground);
+  --color-border: var(--oa-border);
+  --color-input: var(--oa-input);
+  --color-ring: var(--oa-ring);
+  --radius-sm: var(--oa-radius-sm);
+  --radius-md: var(--oa-radius-md);
+  --radius-lg: var(--oa-radius-lg);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--oa-background);
+  color: var(--oa-foreground);
+}
