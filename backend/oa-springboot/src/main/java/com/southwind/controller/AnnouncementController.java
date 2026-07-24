@@ -127,7 +127,10 @@ public class AnnouncementController {
     public ResultVO update(@RequestBody Announcement announcement) {
         announcement.setUpdateTime(LocalDateTime.now());
         boolean update = announcementService.updateById(announcement);
-        if (!update) return ResultVOUtil.fail("更新失败");
+        if (!update) {
+            // 乐观锁冲突，返回特定错误信息
+            return ResultVOUtil.fail("数据已被其他管理员修改，请刷新后重试");
+        }
         return ResultVOUtil.success(null);
     }
 
@@ -140,21 +143,33 @@ public class AnnouncementController {
 
     @PutMapping("/setTop/{id}")
     public ResultVO setTop(@PathVariable("id") Integer id) {
-        UpdateWrapper<Announcement> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", id).set("is_top", 1).set("update_time", LocalDateTime.now());
+        Announcement announcement = announcementService.getById(id);
+        if (announcement == null) {
+            return ResultVOUtil.fail("公告不存在");
+        }
+        announcement.setIsTop(1);
+        announcement.setUpdateTime(LocalDateTime.now());
         
-        boolean update = announcementService.update(updateWrapper);
-        if (!update) return ResultVOUtil.fail("置顶失败");
+        boolean update = announcementService.updateById(announcement);
+        if (!update) {
+            return ResultVOUtil.fail("数据已被其他管理员修改，请刷新后重试");
+        }
         return ResultVOUtil.success(null);
     }
 
     @PutMapping("/cancelTop/{id}")
     public ResultVO cancelTop(@PathVariable("id") Integer id) {
-        UpdateWrapper<Announcement> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", id).set("is_top", 0).set("update_time", LocalDateTime.now());
+        Announcement announcement = announcementService.getById(id);
+        if (announcement == null) {
+            return ResultVOUtil.fail("公告不存在");
+        }
+        announcement.setIsTop(0);
+        announcement.setUpdateTime(LocalDateTime.now());
         
-        boolean update = announcementService.update(updateWrapper);
-        if (!update) return ResultVOUtil.fail("取消置顶失败");
+        boolean update = announcementService.updateById(announcement);
+        if (!update) {
+            return ResultVOUtil.fail("数据已被其他管理员修改，请刷新后重试");
+        }
         return ResultVOUtil.success(null);
     }
 

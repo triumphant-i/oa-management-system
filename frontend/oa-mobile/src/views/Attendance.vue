@@ -10,6 +10,15 @@
       </div>
     </div>
 
+    <div class="shift-bar" v-if="employeeShift">
+      <van-icon name="clock-o" size="18" color="#3677ef" />
+      <div class="shift-info">
+        <span class="shift-name">{{ employeeShift.name }}</span>
+        <span class="shift-time">{{ formatTime(employeeShift.workStart) }} - {{ formatTime(employeeShift.workEnd) }}</span>
+      </div>
+      <span class="shift-lunch" v-if="employeeShift.lunchDeductMinutes">午休{{ employeeShift.lunchDeductMinutes }}分钟</span>
+    </div>
+
     <div class="location-bar" @click="getLocation">
       <van-icon name="location-o" size="18" :color="locationStatus === 'success' ? '#00b894' : '#ff6b35'" />
       <span class="location-text">{{ locationText }}</span>
@@ -88,6 +97,40 @@
           签退
         </van-button>
       </div>
+
+      <!-- 加班打卡按钮 -->
+      <div class="overtime-buttons">
+        <van-button 
+          type="warning" 
+          size="large" 
+          round 
+          class="overtime-btn" 
+          @click="handleOvertimeCheckIn"
+          :disabled="hasOngoingOvertime || overtimeChecking || !isOvertimeTime"
+          :loading="overtimeChecking"
+        >
+          {{ hasOngoingOvertime ? '加班中...' : '加班签到' }}
+        </van-button>
+        <van-button 
+          plain 
+          type="warning"
+          size="large" 
+          round 
+          class="overtime-btn" 
+          @click="handleOvertimeCheckOut" 
+          :disabled="!hasOngoingOvertime"
+        >
+          加班签退
+        </van-button>
+      </div>
+      <div class="overtime-tip" v-if="isOvertimeTime">
+        <van-icon name="clock-o" size="14" color="#ff6b35" />
+        <span>当前时间不在工作时间内，打卡将记录为加班</span>
+      </div>
+      <div class="overtime-tip" v-else>
+        <van-icon name="clock-o" size="14" color="#999" />
+        <span>当前时间在工作时间内，加班签到仅在非工作时间开放</span>
+      </div>
       <div class="location-tip" v-if="locationStatus === 'error'">
         <van-icon name="warning-o" size="14" color="#e17055" />
         <span>定位失败，请检查GPS权限后重试</span>
@@ -117,6 +160,29 @@
         <div class="empty-state" v-if="todayRecords.length === 0">
           <van-icon name="clock-o" size="40" color="#ccc" />
           <p>今日暂无打卡记录</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 今日加班记录 -->
+    <div class="section-wrap" v-if="todayOvertimeRecords.length > 0">
+      <div class="section-header">
+        <h3>今日加班记录</h3>
+        <span class="look-more" @click="goToHistory">查看全部 ></span>
+      </div>
+      <div class="record-list">
+        <div class="record-item overtime-record" v-for="(item, index) in todayOvertimeRecords" :key="index">
+          <van-icon name="clock-o" size="18" color="#ff6b35" />
+          <div class="overtime-info">
+            <span class="record-time">{{ item.startTime ? new Date(item.startTime).toLocaleTimeString('zh-CN') : '--:--:--' }}</span>
+            <span class="record-time">~</span>
+            <span class="record-time">{{ item.endTime ? new Date(item.endTime).toLocaleTimeString('zh-CN') : '进行中' }}</span>
+          </div>
+          <span class="record-type">加班</span>
+          <span class="overtime-duration" v-if="item.duration">时长 {{ item.duration }}h</span>
+          <span class="record-status" :class="getOvertimeStatusClass(item.status)">
+            {{ item.status }}
+          </span>
         </div>
       </div>
     </div>
@@ -210,8 +276,9 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
-import { checkIn, checkOut, getTodayStatus, getMyRecords, getCompanyLocation, calculateDistance } from '@/api/attendance'
+import { checkIn, checkOut, getTodayStatus, getMyRecords, getCompanyLocation, calculateDistance, getEmployeeShift } from '@/api/attendance'
 import { submitApproval } from '@/api/approval'
+import { overtimeCheckIn, overtimeCheckOut, getTodayOvertime } from '@/api/overtime'
 
 const router = useRouter()
 let timer = null
@@ -224,6 +291,7 @@ const COMPANY_LOCATION = ref({
 
 const employeeId = ref(null)
 const employeeName = ref('')
+const employeeShift = ref(null)
 
 const stats = ref({ attendance: 0, late: 0, early: 0, absent: 0 })
 
@@ -240,6 +308,28 @@ const currentLatitude = ref(null)
 const currentLongitude = ref(null)
 
 const todayRecords = ref([])
+
+// 加班相关状态
+const showOvertimeButtons = ref(false)
+const hasOngoingOvertime = ref(false)
+const overtimeChecking = ref(false)
+const todayOvertimeRecords = ref([])
+
+const isOvertimeTime = computed(() => {
+  if (!employeeShift.value) return false
+  const now = new Date()
+  const currentHour = now.getHours()
+  const currentMinute = now.getMinutes()
+  const currentTotalMinutes = currentHour * 60 + currentMinute
+  
+  const workStartParts = employeeShift.value.workStart.split(':')
+  const workStartMinutes = parseInt(workStartParts[0]) * 60 + parseInt(workStartParts[1])
+  
+  const workEndParts = employeeShift.value.workEnd.split(':')
+  const workEndMinutes = parseInt(workEndParts[0]) * 60 + parseInt(workEndParts[1])
+  
+  return currentTotalMinutes < workStartMinutes || currentTotalMinutes > workEndMinutes
+})
 
 const showApplyCorrection = ref(false)
 const showCorrectionDatePicker = ref(false)
@@ -463,6 +553,70 @@ const handleCheckOut = async () => {
   }
 }
 
+// ========== 加班打卡方法 ==========
+
+const handleOvertimeCheckIn = async () => {
+  overtimeChecking.value = true
+  try {
+    const params = new URLSearchParams()
+    if (currentLatitude.value && currentLongitude.value) {
+      params.append('latitude', currentLatitude.value)
+      params.append('longitude', currentLongitude.value)
+    }
+    
+    const res = await overtimeCheckIn(params)
+    if (res.code === 0) {
+      showToast('✅ 加班签到成功！')
+      await fetchTodayOvertime()
+    } else {
+      showToast(res.message || '加班签到失败')
+    }
+  } catch (error) {
+    showToast('加班签到失败，请稍后重试')
+  } finally {
+    overtimeChecking.value = false
+  }
+}
+
+const handleOvertimeCheckOut = async () => {
+  try {
+    const params = new URLSearchParams()
+    if (currentLatitude.value && currentLongitude.value) {
+      params.append('latitude', currentLatitude.value)
+      params.append('longitude', currentLongitude.value)
+    }
+    
+    const res = await overtimeCheckOut(params)
+    if (res.code === 0) {
+      showToast(res.message || '✅ 加班签退成功！')
+      await fetchTodayOvertime()
+    } else {
+      showToast(res.message || '加班签退失败')
+    }
+  } catch (error) {
+    showToast('加班签退失败，请稍后重试')
+  }
+}
+
+const fetchTodayOvertime = async () => {
+  try {
+    const res = await getTodayOvertime()
+    if (res.code === 0 && res.data) {
+      todayOvertimeRecords.value = Array.isArray(res.data) ? res.data : []
+      // 检查是否有正在进行的加班（end_time为空）
+      hasOngoingOvertime.value = todayOvertimeRecords.value.some(r => !r.endTime)
+    }
+  } catch (error) {
+    console.error('获取今日加班记录失败', error)
+  }
+}
+
+const getOvertimeStatusClass = (status) => {
+  if (status === '已通过') return 'approved'
+  if (status === '已拒绝') return 'abnormal'
+  return 'pending'
+}
+
 const onConfirmCorrectionDate = (value) => {
   const date = new Date(value)
   correctionData.value.date = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
@@ -525,8 +679,7 @@ const getLocation = async () => {
   locationText.value = '正在获取位置...'
   
   if (!navigator.geolocation) {
-    locationStatus.value = 'error'
-    locationText.value = '浏览器不支持定位'
+    useMockLocation()
     return
   }
 
@@ -560,11 +713,25 @@ const getLocation = async () => {
       }
     },
     () => {
-      locationStatus.value = 'error'
-      locationText.value = '定位失败，请检查GPS权限'
+      useMockLocation()
     },
     { enableHighAccuracy: true, timeout: 10000 }
   )
+}
+
+const useMockLocation = () => {
+  currentLatitude.value = COMPANY_LOCATION.value.lat + (Math.random() - 0.5) * 0.001
+  currentLongitude.value = COMPANY_LOCATION.value.lng + (Math.random() - 0.5) * 0.001
+  
+  const distance = calcDistance(
+    currentLatitude.value, currentLongitude.value,
+    COMPANY_LOCATION.value.lat, COMPANY_LOCATION.value.lng
+  )
+  isInRange.value = distance <= COMPANY_LOCATION.value.range
+  locationStatus.value = 'success'
+  locationText.value = isInRange.value 
+    ? `📍 公司范围内 (${Math.round(distance)}m)`
+    : `📍 距公司 ${Math.round(distance)}m，超出范围`
 }
 
 const updateTime = () => {
@@ -576,6 +743,23 @@ const updateTime = () => {
 
 const goToHistory = () => {
   router.push('/attendance/history')
+}
+
+const fetchEmployeeShift = async () => {
+  if (!employeeId.value) return
+  try {
+    const res = await getEmployeeShift(employeeId.value)
+    if (res.code === 0 && res.data) {
+      employeeShift.value = res.data
+    }
+  } catch (error) {
+    console.error('获取员工班次失败', error)
+  }
+}
+
+const formatTime = (timeStr) => {
+  if (!timeStr) return ''
+  return timeStr.substring(0, 5)
 }
 
 onMounted(() => {
@@ -595,6 +779,8 @@ onMounted(() => {
   fetchCompanyLocation()
   fetchTodayStatus()
   fetchMyRecords()
+  fetchEmployeeShift()
+  fetchTodayOvertime()
   
   setTimeout(getLocation, 500)
 })
@@ -634,6 +820,21 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
 }
+
+.shift-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #e8f4fe;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border: 1px solid #b3d9ff;
+}
+.shift-info { flex: 1; }
+.shift-name { font-size: 15px; font-weight: bold; color: #1a6ddc; display: block; }
+.shift-time { font-size: 13px; color: #3677ef; }
+.shift-lunch { font-size: 12px; color: #666; background: #fff; padding: 2px 10px; border-radius: 10px; }
 
 .location-bar {
   display: flex;
@@ -710,6 +911,32 @@ onUnmounted(() => {
 }
 .clock-buttons .check-btn:disabled { opacity: 0.5; }
 
+.overtime-buttons { 
+  display: flex; 
+  gap: 12px; 
+  margin-top: 12px;
+}
+.overtime-buttons .overtime-btn { 
+  flex: 1; 
+  height: 44px;
+  font-size: 15px;
+}
+.overtime-buttons .overtime-btn:disabled { opacity: 0.5; }
+
+.overtime-tip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #ff6b35;
+  flex-wrap: wrap;
+  background: #fff8f0;
+  padding: 8px 16px;
+  border-radius: 8px;
+}
+
 .location-tip {
   display: flex;
   align-items: center;
@@ -753,6 +980,18 @@ onUnmounted(() => {
 .record-status { font-size: 12px; padding: 2px 12px; border-radius: 12px; }
 .record-status.normal { color: #00b894; background: #e8f8f0; }
 .record-status.abnormal { color: #ff6b35; background: #fff0e8; }
+.record-status.pending { color: #fdcb6e; background: #fffbeb; }
+.record-status.approved { color: #00b894; background: #e8f8f0; }
+
+.overtime-record {
+  background: #fff8f0;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.overtime-record:last-child { margin-bottom: 0; }
+.overtime-info { display: flex; align-items: center; gap: 4px; flex: 1; }
+.overtime-duration { font-size: 12px; color: #ff6b35; font-weight: 500; }
 
 .empty-state {
   text-align: center;

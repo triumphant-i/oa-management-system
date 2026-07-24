@@ -32,4 +32,54 @@ public class Dict implements Serializable {
 
     @TableField("update_time")
     private LocalDateTime updateTime;
+
+    // 手动添加 getter 方法
+    public Integer getId() {
+        return id;
+    }
+
+    public String getKey() {
+        return key;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getOptions() {
+        return options;
+    }
+
+    public LocalDateTime getCreateTime() {
+        return createTime;
+    }
+
+    public LocalDateTime getUpdateTime() {
+        return updateTime;
+    }
+
+    // 手动添加 setter 方法
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public void setKey(String key) {
+        this.key = key;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public void setOptions(String options) {
+        this.options = options;
+    }
+
+    public void setCreateTime(LocalDateTime createTime) {
+        this.createTime = createTime;
+    }
+
+    public void setUpdateTime(LocalDateTime updateTime) {
+        this.updateTime = updateTime;
+    }
 }

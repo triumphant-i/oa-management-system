@@ -3,14 +3,20 @@ package com.southwind.controller;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.southwind.entity.Attendance;
+import com.southwind.entity.AttendanceOvertime;
+import com.southwind.entity.Employee;
+import com.southwind.entity.Shift;
+import com.southwind.service.AttendanceOvertimeService;
 import com.southwind.service.AttendanceService;
 import com.southwind.service.EmployeeService;
+import com.southwind.service.ShiftService;
 import com.southwind.util.ResultVOUtil;
 import com.southwind.vo.PageVO;
 import com.southwind.vo.ResultVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -29,12 +35,26 @@ public class AttendanceController {
     @Autowired
     private EmployeeService employeeService;
 
-    private static final LocalTime WORK_START_TIME = LocalTime.of(9, 0);
-    private static final LocalTime WORK_END_TIME = LocalTime.of(17, 30);
+    @Autowired
+    private ShiftService shiftService;
+
+    @Autowired
+    private AttendanceOvertimeService attendanceOvertimeService;
 
     private static final double COMPANY_LAT = 26.02552;
     private static final double COMPANY_LNG = 119.40617;
     private static final double RANGE_METERS = 500;
+
+    private Shift getEmployeeShift(Integer employeeId) {
+        Employee employee = employeeService.getById(employeeId);
+        if (employee != null && employee.getShiftId() != null) {
+            Shift shift = shiftService.getById(employee.getShiftId());
+            if (shift != null) {
+                return shift;
+            }
+        }
+        return shiftService.getDefaultShift();
+    }
 
     @PostMapping("/checkIn")
     public ResultVO checkIn(@RequestBody Map<String, Object> params) {
@@ -53,12 +73,20 @@ public class AttendanceController {
             return ResultVOUtil.fail("今日已签到");
         }
 
-        Attendance attendance = new Attendance();
-        attendance.setEmployeeId(employeeId);
-        attendance.setEmployeeName(employeeName);
-        attendance.setDate(today);
+        Shift shift = getEmployeeShift(employeeId);
+
+        Attendance attendance;
+        if (existing != null) {
+            attendance = existing;
+        } else {
+            attendance = new Attendance();
+            attendance.setEmployeeId(employeeId);
+            attendance.setEmployeeName(employeeName);
+            attendance.setDate(today);
+            attendance.setCreateTime(LocalDateTime.now());
+        }
         attendance.setCheckInTime(LocalDateTime.now());
-        attendance.setCreateTime(LocalDateTime.now());
+        attendance.setAttendanceStatus("未处理");
 
         if (params.containsKey("latitude") && params.containsKey("longitude")) {
             Double latitude = Double.parseDouble(params.get("latitude").toString());
@@ -67,15 +95,36 @@ public class AttendanceController {
             attendance.setCheckInLongitude(longitude);
         }
 
-        if (now.isAfter(WORK_START_TIME)) {
-            attendance.setStatus("迟到");
-        } else {
-            attendance.setStatus("正常");
-        }
+        String status = "正常";
+        Integer lateMinutes = 0;
 
-        boolean save = attendanceService.save(attendance);
+        LocalTime workStart = shift.getWorkStart();
+        LocalTime graceTime = workStart.plusMinutes(shift.getLateGraceMinutes());
+
+        // 正常考勤状态只有三种：正常、迟到、早退
+        if (now.isAfter(graceTime)) {
+            status = "迟到";
+            lateMinutes = (int) Duration.between(workStart, now).toMinutes();
+        }
+        // 上班前签到也视为正常（加班记录在加班表中单独处理）
+
+        attendance.setStatus(status);
+        attendance.setLateMinutes(lateMinutes);
+
+        boolean save;
+        if (existing != null) {
+            save = attendanceService.updateById(attendance);
+        } else {
+            save = attendanceService.save(attendance);
+        }
         if (!save) return ResultVOUtil.fail("签到失败");
-        return ResultVOUtil.success("签到成功");
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("status", status);
+        result.put("lateMinutes", lateMinutes);
+        result.put("shift", shift);
+
+        return ResultVOUtil.success(result);
     }
 
     @PostMapping("/checkOut")
@@ -98,6 +147,8 @@ public class AttendanceController {
             return ResultVOUtil.fail("今日已签退");
         }
 
+        Shift shift = getEmployeeShift(employeeId);
+
         Attendance updateAttendance = new Attendance();
         updateAttendance.setId(attendance.getId());
         updateAttendance.setCheckOutTime(LocalDateTime.now());
@@ -111,18 +162,49 @@ public class AttendanceController {
         }
 
         String status = attendance.getStatus();
-        if (now.isBefore(WORK_END_TIME)) {
-            if ("正常".equals(status)) {
-                status = "早退";
-            } else if ("迟到".equals(status)) {
-                status = "迟到/早退";
-            }
-            updateAttendance.setStatus(status);
+        Integer earlyMinutes = 0;
+
+        LocalTime workEnd = shift.getWorkEnd();
+        LocalTime earlyThreshold = workEnd.minusMinutes(shift.getLateGraceMinutes());
+
+        // 正常考勤状态只有三种：正常、迟到、早退
+        if (now.isBefore(earlyThreshold)) {
+            earlyMinutes = (int) Duration.between(now, workEnd).toMinutes();
+            status = "早退";
+        }
+        // 下班后的加班记录在加班表中单独处理，主考勤表只记录正常考勤状态
+
+        updateAttendance.setStatus(status);
+        updateAttendance.setEarlyMinutes(earlyMinutes);
+
+        if (attendance.getCheckInTime() != null) {
+            double workHours = calculateWorkHours(attendance.getCheckInTime(), LocalDateTime.now(), shift);
+            updateAttendance.setWorkHours(workHours);
         }
 
         boolean update = attendanceService.updateById(updateAttendance);
         if (!update) return ResultVOUtil.fail("签退失败");
-        return ResultVOUtil.success("签退成功");
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("status", status);
+        result.put("earlyMinutes", earlyMinutes);
+
+        return ResultVOUtil.success(result);
+    }
+
+    private double calculateWorkHours(LocalDateTime checkIn, LocalDateTime checkOut, Shift shift) {
+        Duration totalDuration = Duration.between(checkIn, checkOut);
+        double totalMinutes = totalDuration.toMinutes();
+
+        LocalTime lunchStart = shift.getLunchStart();
+        LocalTime lunchEnd = shift.getLunchEnd();
+        int lunchDeduct = shift.getLunchDeductMinutes();
+
+        if (lunchStart != null && lunchEnd != null && checkIn.toLocalTime().isBefore(lunchEnd) && checkOut.toLocalTime().isAfter(lunchStart)) {
+            totalMinutes -= lunchDeduct;
+        }
+
+        return Math.max(0, totalMinutes / 60.0);
     }
 
     @GetMapping("/todayStatus/{employeeId}")
@@ -134,6 +216,8 @@ public class AttendanceController {
         queryWrapper.eq("date", today);
         Attendance attendance = attendanceService.getOne(queryWrapper);
 
+        Shift shift = getEmployeeShift(employeeId);
+
         Map<String, Object> result = new HashMap<>();
         result.put("date", today);
         result.put("checkIn", attendance != null && attendance.getCheckInTime() != null);
@@ -141,6 +225,12 @@ public class AttendanceController {
         result.put("status", attendance != null ? attendance.getStatus() : "未签到");
         result.put("checkInTime", attendance != null && attendance.getCheckInTime() != null ? attendance.getCheckInTime() : null);
         result.put("checkOutTime", attendance != null && attendance.getCheckOutTime() != null ? attendance.getCheckOutTime() : null);
+        result.put("shift", shift);
+        result.put("lateMinutes", attendance != null ? attendance.getLateMinutes() : 0);
+        result.put("earlyMinutes", attendance != null ? attendance.getEarlyMinutes() : 0);
+        result.put("overtimeBefore", attendance != null ? attendance.getOvertimeBefore() : 0);
+        result.put("overtimeAfter", attendance != null ? attendance.getOvertimeAfter() : 0);
+        result.put("workHours", attendance != null ? attendance.getWorkHours() : 0);
 
         return ResultVOUtil.success(result);
     }
@@ -152,6 +242,28 @@ public class AttendanceController {
         queryWrapper.orderByDesc("date");
         queryWrapper.orderByDesc("check_in_time");
         List<Attendance> list = attendanceService.list(queryWrapper);
+        
+        // 将状态统一转换为三种：正常、迟到、早退
+        for (Attendance attendance : list) {
+            String status = attendance.getStatus();
+            if (status == null || status.isEmpty()) {
+                attendance.setStatus("正常");
+            } else if (status.contains("迟到")) {
+                attendance.setStatus("迟到");
+            } else if (status.contains("早退")) {
+                attendance.setStatus("早退");
+            } else if (status.contains("加班")) {
+                // 加班状态改为正常（加班记录在加班表中单独处理）
+                if (attendance.getLateMinutes() != null && attendance.getLateMinutes() > 0) {
+                    attendance.setStatus("迟到");
+                } else {
+                    attendance.setStatus("正常");
+                }
+            } else {
+                attendance.setStatus("正常");
+            }
+        }
+        
         return ResultVOUtil.success(list);
     }
 
@@ -213,6 +325,7 @@ public class AttendanceController {
         }
 
         attendance.setStatus("待审核");
+        attendance.setAttendanceStatus("待审核");
         attendance.setRemark(type + " - " + reason);
         attendance.setCreateTime(LocalDateTime.now());
         attendance.setUpdateTime(LocalDateTime.now());
@@ -269,5 +382,82 @@ public class AttendanceController {
         queryWrapper.orderByDesc("create_time");
         List<Attendance> list = attendanceService.list(queryWrapper);
         return ResultVOUtil.success(list);
+    }
+
+    @GetMapping("/getEmployeeShift/{employeeId}")
+    public ResultVO getEmployeeShiftInfo(@PathVariable("employeeId") Integer employeeId) {
+        Shift shift = getEmployeeShift(employeeId);
+        return ResultVOUtil.success(shift);
+    }
+
+    /**
+     * 获取员工某时间段的完整考勤记录（包含加班记录）
+     */
+    @GetMapping("/myAttendanceWithOvertime/{employeeId}/{startDate}/{endDate}")
+    public ResultVO myAttendanceWithOvertime(
+            @PathVariable("employeeId") Integer employeeId,
+            @PathVariable("startDate") String startDate,
+            @PathVariable("endDate") String endDate) {
+        
+        try {
+            // 查询正常考勤记录
+            QueryWrapper<Attendance> attendanceWrapper = new QueryWrapper<>();
+            attendanceWrapper.eq("employee_id", employeeId);
+            attendanceWrapper.between("date", startDate, endDate);
+            attendanceWrapper.orderByDesc("date");
+            List<Attendance> attendanceList = attendanceService.list(attendanceWrapper);
+
+            // 查询加班记录
+            List<AttendanceOvertime> overtimeList = attendanceOvertimeService.findByEmployeeAndDateRange(
+                    employeeId, startDate, endDate);
+
+            // 计算总加班时长
+            Double totalOvertime = attendanceOvertimeService.calculateTotalOvertime(
+                    employeeId, startDate, endDate);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("attendanceList", attendanceList);
+            result.put("overtimeList", overtimeList);
+            result.put("totalOvertime", totalOvertime);
+
+            return ResultVOUtil.success(result);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResultVOUtil.fail("查询失败");
+        }
+    }
+
+    /**
+     * 获取今日完整考勤信息（包含今日加班记录）
+     */
+    @GetMapping("/todayFullInfo/{employeeId}")
+    public ResultVO todayFullInfo(@PathVariable("employeeId") Integer employeeId) {
+        try {
+            String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+
+            // 查询今日考勤记录
+            QueryWrapper<Attendance> attendanceWrapper = new QueryWrapper<>();
+            attendanceWrapper.eq("employee_id", employeeId);
+            attendanceWrapper.eq("date", today);
+            Attendance attendance = attendanceService.getOne(attendanceWrapper);
+
+            // 查询今日加班记录
+            List<AttendanceOvertime> overtimeList = attendanceOvertimeService.findByEmployeeAndDate(
+                    employeeId, today);
+
+            Shift shift = getEmployeeShift(employeeId);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("attendance", attendance);
+            result.put("overtimeList", overtimeList);
+            result.put("shift", shift);
+
+            return ResultVOUtil.success(result);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResultVOUtil.fail("查询失败");
+        }
     }
 }

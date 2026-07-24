@@ -56,9 +56,15 @@
         </van-cell-group>
       </div>
 
-      <!-- 审批流程 -->
+      <!-- 审批流程（当前进度） -->
       <div class="info-section">
         <div class="section-title">审批流程</div>
+        <!-- 会签进度提示 -->
+        <div class="countersign-info" v-if="countersignSummary">
+          <van-tag round type="warning" size="medium">
+            {{ countersignSummary }}
+          </van-tag>
+        </div>
         <div class="flow-timeline">
           <div class="flow-step" v-for="(step, index) in flowSteps" :key="index">
             <div class="step-left">
@@ -67,8 +73,21 @@
             </div>
             <div class="step-right">
               <div class="step-title">{{ step.title }}</div>
-              <div class="step-desc">{{ step.desc }}</div>
+              <div class="step-desc" v-html="step.desc"></div>
               <div class="step-time" v-if="step.time">{{ step.time }}</div>
+              <!-- 会签子节点详细信息 -->
+              <div class="parallel-detail" v-if="step.parallelTasks && step.parallelTasks.length > 0">
+                <div
+                  class="parallel-item"
+                  v-for="(pt, pi) in step.parallelTasks"
+                  :key="pi"
+                  :class="pt.outcome === 'REJECT' ? 'parallel-rejected' : pt.outcome ? 'parallel-approved' : ''"
+                >
+                  <span class="parallel-icon">{{ pt.outcome === 'REJECT' ? '✗' : pt.outcome === 'APPROVE' ? '✓' : '⏳' }}</span>
+                  <span class="parallel-name">{{ pt.assigneeName || pt.assignee || '待审批' }}</span>
+                  <span class="parallel-comment" v-if="pt.rejectReason || pt.approvalComment">（{{ pt.rejectReason || pt.approvalComment }}）</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -97,10 +116,20 @@
       </div>
     </van-popup>
 
-    <!-- 拒绝弹窗 -->
+    <!-- 拒绝弹窗（强制填写理由） -->
     <van-popup v-model:show="showRejectModal" position="bottom" round style="padding:20px 16px 30px;">
       <h3 style="margin:0 0 16px;">拒绝理由</h3>
-      <van-field v-model="rejectReason" rows="3" type="textarea" placeholder="请输入拒绝理由（必填）" required />
+      <van-field
+        v-model="rejectReason"
+        rows="3"
+        type="textarea"
+        placeholder="请填写拒绝理由（必填，申请人和其他已审批人将可见）"
+        required
+        :rules="[{ required: true, message: '请填写拒绝理由' }]"
+      />
+      <div class="reject-tip">
+        <van-icon name="info-o" /> 拒绝理由将对申请人和已审批人可见
+      </div>
       <div style="display:flex;gap:12px;margin-top:16px;">
         <van-button plain block @click="showRejectModal = false">取消</van-button>
         <van-button type="danger" block @click="submitReject" :loading="submitting">拒绝</van-button>
@@ -115,7 +144,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
-import { getApprovalDetail, handleApproval } from '@/api/approval'
+import { getApprovalDetail, getApprovalProgress, handleApproval } from '@/api/approval'
 
 const router = useRouter()
 const route = useRoute()
@@ -140,6 +169,15 @@ const detail = ref({
   approveTime: '',
   updateTime: '',
   departmentName: ''
+})
+
+const progress = ref({
+  approval: null,
+  currentActivities: null,
+  historyTasks: [],
+  pendingTasks: [],
+  signType: '',
+  requiredRoles: ''
 })
 
 // ===== 当前用户 =====
@@ -187,25 +225,22 @@ const statusIcon = computed(() => {
 const detailFields = computed(() => {
   const fields = {}
   const d = detail.value
-  
+
   switch (d.approvalType) {
     case 'leave':
       if (d.leaveType) fields['请假类型'] = d.leaveType
       if (d.startTime) fields['开始日期'] = formatDate(d.startTime)
       if (d.endTime) fields['结束日期'] = formatDate(d.endTime)
-      if (d.totalDays) fields['请假天数'] = d.totalDays + '天'
       break
     case 'business':
       if (d.destCity) fields['出差城市'] = d.destCity
       if (d.startTime) fields['出发日期'] = formatDate(d.startTime)
       if (d.endTime) fields['返回日期'] = formatDate(d.endTime)
-      if (d.totalDays) fields['出差天数'] = d.totalDays + '天'
       break
     case 'overtime':
       if (d.workDate) fields['加班日期'] = formatDate(d.workDate)
       if (d.startTimeOnly) fields['开始时间'] = d.startTimeOnly
       if (d.endTimeOnly) fields['结束时间'] = d.endTimeOnly
-      if (d.totalHours) fields['加班时长'] = d.totalHours + '小时'
       break
     case 'reimburse':
       if (d.expenseType) fields['报销类型'] = d.expenseType
@@ -216,7 +251,6 @@ const detailFields = computed(() => {
       if (d.goodsName) fields['物品名称'] = d.goodsName
       if (d.quantity) fields['采购数量'] = d.quantity
       if (d.unitPrice) fields['单价'] = '¥' + d.unitPrice
-      if (d.totalAmount) fields['总金额'] = '¥' + d.totalAmount
       break
     case 'card':
       if (d.cardDate) fields['补卡日期'] = formatDate(d.cardDate)
@@ -224,18 +258,55 @@ const detailFields = computed(() => {
       if (d.cardType) fields['补卡类型'] = d.cardType
       break
   }
-  
+
   return fields
 })
 
 // =============================================
-// ===== 审批流程 =====
+// ===== 会签进度汇总 =====
+// =============================================
+const countersignSummary = computed(() => {
+  const p = progress.value
+  const pendingTasks = p.pendingTasks || []
+  const historyTasks = p.historyTasks || []
+
+  if (pendingTasks.length <= 1) return null
+
+  // 按节点分组统计
+  const nodeMap = {}
+  pendingTasks.forEach(t => {
+    const key = t.name || '未知节点'
+    if (!nodeMap[key]) nodeMap[key] = { pending: 0, completed: 0, total: 0 }
+    nodeMap[key].pending++
+    nodeMap[key].total++
+  })
+  historyTasks.forEach(t => {
+    if (t.completeTime) {
+      const key = t.name || '未知节点'
+      if (!nodeMap[key]) nodeMap[key] = { pending: 0, completed: 0, total: 0 }
+      nodeMap[key].completed++
+      nodeMap[key].total++
+    }
+  })
+
+  const multiNodes = Object.entries(nodeMap).filter(([, info]) => info.total > 1)
+  if (multiNodes.length === 0) return null
+
+  const [name, info] = multiNodes[0]
+  return `「${name}」会签中: ${info.completed}/${info.total} 已完成`
+})
+
+// =============================================
+// ===== 审批流程（智能识别三种模式） =====
 // =============================================
 const flowSteps = computed(() => {
   const steps = []
   const d = detail.value
-  const status = d.status
-  
+  const p = progress.value
+  const signType = p.signType || ''
+  const historyTasks = p.historyTasks || []
+  const pendingTasks = p.pendingTasks || []
+
   // 第一步：提交申请
   steps.push({
     title: '提交申请',
@@ -243,33 +314,132 @@ const flowSteps = computed(() => {
     time: formatTime(d.createTime),
     status: 'done'
   })
-  
-  // 第二步：根据状态显示
-  if (status === '待审批') {
-    steps.push({
-      title: '部门主管审批',
-      desc: '⏳ 待审批',
-      time: '',
-      status: 'active'
+
+  // 判断是否有真实流程数据
+  if (historyTasks.length > 0 || pendingTasks.length > 0) {
+    // 按节点分组（taskDefinitionKey 分组）
+    const nodeGroups = groupTasksByNode(historyTasks, pendingTasks)
+
+    nodeGroups.forEach((node, index) => {
+      const allCompleted = node.tasks.every(t => t.completeTime)
+      const hasReject = node.tasks.some(t => t.outcome === 'REJECT' || t.outcome === '已拒绝')
+      const isActive = !allCompleted
+
+      // 节点状态
+      let status = 'pending'
+      if (allCompleted) status = hasReject ? 'rejected' : 'done'
+      else if (isActive) status = 'active'
+
+      // 构建描述
+      let desc = ''
+      if (allCompleted && hasReject) {
+        const rejectTask = node.tasks.find(t => t.outcome === 'REJECT')
+        const rejectorName = rejectTask?.assigneeName || rejectTask?.assignee || '审批人'
+        const reason = rejectTask?.rejectReason || ''
+        desc = `<span style="color:#ee0a24;">✗ 被 ${rejectorName} 拒绝</span>`
+        if (reason) desc += `<br/><span style="font-size:12px;color:#999;">理由：${reason}</span>`
+      } else if (allCompleted) {
+        if (node.tasks.length > 1) {
+          const names = node.tasks.map(t => t.assigneeName || t.assignee || '未知').filter(Boolean)
+          desc = `✓ 已全部通过（${names.join('、')}）`
+        } else {
+          const name = node.tasks[0]?.assigneeName || node.tasks[0]?.assignee || '审批人'
+          desc = `✓ ${name} 已通过`
+        }
+      } else {
+        // 当前活跃节点
+        if (node.tasks.length > 1) {
+          const completedCount = node.tasks.filter(t => t.completeTime).length
+          const pendingNames = node.tasks
+            .filter(t => !t.completeTime)
+            .map(t => t.assigneeName || t.assignee || '待审批')
+            .filter(Boolean)
+          desc = `⏳ 会签中（${completedCount}/${node.tasks.length}）`
+          if (pendingNames.length > 0) {
+            desc += `<br/><span style="font-size:12px;color:#999;">待审批：${pendingNames.join('、')}</span>`
+          }
+        } else {
+          const name = node.tasks[0]?.assigneeName || node.tasks[0]?.assignee || '审批人'
+          desc = `⏳ 待 ${name} 审批`
+        }
+      }
+
+      const stepInfo = {
+        title: node.nodeName || '审批节点',
+        desc: desc,
+        time: node.completedTime ? formatTime(node.completedTime) : '',
+        status: status,
+        parallelTasks: node.tasks.length > 1 ? node.tasks : []
+      }
+
+      steps.push(stepInfo)
     })
-  } else if (status === '已通过') {
-    steps.push({
-      title: '部门主管审批',
-      desc: '已通过',
-      time: formatTime(d.approveTime || d.updateTime),
-      status: 'done'
-    })
-  } else if (status === '已拒绝') {
-    steps.push({
-      title: '部门主管审批',
-      desc: '已拒绝',
-      time: formatTime(d.approveTime || d.updateTime),
-      status: 'done'
-    })
+  } else {
+    // 没有真实进度数据时回退到简单展示
+    if (d.status === '待审批') {
+      steps.push({
+        title: '等待审批',
+        desc: '⏳ 待审批',
+        time: '',
+        status: 'active'
+      })
+    } else if (d.status === '已通过') {
+      steps.push({
+        title: '审批通过',
+        desc: '✓ 申请已通过',
+        time: formatTime(d.approveTime || d.updateTime),
+        status: 'done'
+      })
+    } else if (d.status === '已拒绝') {
+      steps.push({
+        title: '审批拒绝',
+        desc: `✗ 理由：${d.approveReason || '无'}`,
+        time: formatTime(d.approveTime || d.updateTime),
+        status: 'rejected'
+      })
+    }
   }
-  
+
   return steps
 })
+
+/**
+ * 将 Flowable 任务按节点分组
+ * 同一节点上的多个并行任务（会签）会被合并到一个步骤中展示
+ */
+function groupTasksByNode(historyTasks, pendingTasks) {
+  // 合并历史+待办，按 taskDefinitionKey 和 name 分组
+  const allTasks = [
+    ...historyTasks.map(t => ({ ...t, completeTime: t.completeTime || null })),
+    ...pendingTasks.map(t => ({ ...t, completeTime: null }))
+  ]
+
+  // 按 taskDefinitionKey 或 name 分组
+  const groups = {}
+  allTasks.forEach(task => {
+    const key = task.taskDefinitionKey || task.name || 'unknown'
+    if (!groups[key]) {
+      groups[key] = {
+        nodeName: task.name || '审批节点',
+        nodeKey: key,
+        tasks: [],
+        completedTime: null
+      }
+    }
+    groups[key].tasks.push(task)
+    // 取该节点最晚的完成时间
+    if (task.completeTime && (!groups[key].completedTime || task.completeTime > groups[key].completedTime)) {
+      groups[key].completedTime = task.completeTime
+    }
+  })
+
+  // 按任务创建时间排序
+  return Object.values(groups).sort((a, b) => {
+    const aTime = a.tasks[0]?.createTime || ''
+    const bTime = b.tasks[0]?.createTime || ''
+    return aTime.localeCompare(bTime)
+  })
+}
 
 // =============================================
 // ===== 工具方法 =====
@@ -300,11 +470,19 @@ const formatDate = (timeStr) => {
 const loadDetail = async (id) => {
   loading.value = true
   try {
-    const res = await getApprovalDetail(id)
-    if (res.code === 0 && res.data) {
-      detail.value = res.data
+    const [detailRes, progressRes] = await Promise.all([
+      getApprovalDetail(id),
+      getApprovalProgress(id).catch(() => ({ code: -1 }))
+    ])
+
+    if (detailRes.code === 0 && detailRes.data) {
+      detail.value = detailRes.data
     } else {
-      showToast(res.msg || '加载失败')
+      showToast(detailRes.msg || '加载失败')
+    }
+
+    if (progressRes.code === 0 && progressRes.data) {
+      progress.value = progressRes.data
     }
   } catch (error) {
     console.error('加载申请详情失败:', error)
@@ -330,7 +508,9 @@ const submitApprove = async () => {
       showToast('审批通过！')
       showApproveModal.value = false
       approveReason.value = ''
-      setTimeout(() => router.back(), 500)
+      setTimeout(() => {
+        loadDetail(detail.value.id)
+      }, 300)
     } else {
       showToast(res.msg || '操作失败')
     }
@@ -342,7 +522,7 @@ const submitApprove = async () => {
 }
 
 // =============================================
-// ===== 拒绝 =====
+// ===== 拒绝（强制填写理由） =====
 // =============================================
 const submitReject = async () => {
   if (!rejectReason.value || rejectReason.value.trim() === '') {
@@ -362,7 +542,9 @@ const submitReject = async () => {
       showToast('已拒绝')
       showRejectModal.value = false
       rejectReason.value = ''
-      setTimeout(() => router.back(), 500)
+      setTimeout(() => {
+        loadDetail(detail.value.id)
+      }, 300)
     } else {
       showToast(res.msg || '操作失败')
     }
@@ -386,7 +568,7 @@ onMounted(() => {
   if (userName) {
     currentUser.value.name = userName
   }
-  
+
   const id = route.params.id
   if (id) {
     loadDetail(id)
@@ -446,14 +628,14 @@ onMounted(() => {
   margin-bottom: 16px;
   color: #fff;
 }
-.status-banner.status-pending { 
-  background: linear-gradient(135deg, #fdcb6e, #f39c12); 
+.status-banner.status-pending {
+  background: linear-gradient(135deg, #fdcb6e, #f39c12);
 }
-.status-banner.status-approved { 
-  background: linear-gradient(135deg, #00b894, #00cec9); 
+.status-banner.status-approved {
+  background: linear-gradient(135deg, #00b894, #00cec9);
 }
-.status-banner.status-rejected { 
-  background: linear-gradient(135deg, #e17055, #d63031); 
+.status-banner.status-rejected {
+  background: linear-gradient(135deg, #e17055, #d63031);
 }
 .status-text { display: flex; flex-direction: column; }
 .status-label { font-size: 18px; font-weight: bold; }
@@ -486,6 +668,12 @@ onMounted(() => {
   text-align: right;
 }
 
+/* ===== 会签进度摘要 ===== */
+.countersign-info {
+  margin-bottom: 10px;
+  text-align: center;
+}
+
 /* ===== 审批流程时间线 ===== */
 .flow-timeline {
   background: #fff;
@@ -515,7 +703,7 @@ onMounted(() => {
 }
 .step-dot.done { border-color: #00b894; background: #00b894; }
 .step-dot.active { border-color: #3677ef; background: #3677ef; box-shadow: 0 0 0 4px rgba(54,119,239,0.2); }
-.step-dot.pending { border-color: #ddd; background: #fff; }
+.step-dot.rejected { border-color: #ee0a24; background: #ee0a24; }
 .step-line {
   width: 2px;
   flex: 1;
@@ -541,6 +729,26 @@ onMounted(() => {
   font-size: 12px;
   color: #bbb;
 }
+
+/* ===== 会签子节点详细信息 ===== */
+.parallel-detail {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+.parallel-item {
+  font-size: 12px;
+  padding: 3px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.parallel-item.parallel-approved { color: #00b894; }
+.parallel-item.parallel-rejected { color: #ee0a24; }
+.parallel-icon { font-weight: bold; }
+.parallel-name { font-weight: 500; }
+.parallel-comment { color: #999; font-size: 11px; }
 
 /* ===== 空状态 ===== */
 .empty-state {
@@ -576,5 +784,16 @@ onMounted(() => {
   border-color: #e17055;
   color: #e17055;
 }
+
+/* ===== 拒绝提示 ===== */
+.reject-tip {
+  font-size: 12px;
+  color: #999;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .safe-bottom { height: 80px; }
 </style>

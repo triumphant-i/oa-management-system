@@ -6,11 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.io.Serializable;
 import java.time.LocalDateTime;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
 
-@Data
-@EqualsAndHashCode(callSuper = false)
 @TableName("t_announcement_read_status")
 public class AnnouncementReadStatus implements Serializable {
 
@@ -33,4 +29,54 @@ public class AnnouncementReadStatus implements Serializable {
 
   @TableField("create_time")
   private LocalDateTime createTime;
+
+  // Getters
+  public Integer getId() {
+    return id;
+  }
+
+  public Integer getAnnouncementId() {
+    return announcementId;
+  }
+
+  public Integer getEmployeeId() {
+    return employeeId;
+  }
+
+  public Integer getIsRead() {
+    return isRead;
+  }
+
+  public LocalDateTime getReadTime() {
+    return readTime;
+  }
+
+  public LocalDateTime getCreateTime() {
+    return createTime;
+  }
+
+  // Setters
+  public void setId(Integer id) {
+    this.id = id;
+  }
+
+  public void setAnnouncementId(Integer announcementId) {
+    this.announcementId = announcementId;
+  }
+
+  public void setEmployeeId(Integer employeeId) {
+    this.employeeId = employeeId;
+  }
+
+  public void setIsRead(Integer isRead) {
+    this.isRead = isRead;
+  }
+
+  public void setReadTime(LocalDateTime readTime) {
+    this.readTime = readTime;
+  }
+
+  public void setCreateTime(LocalDateTime createTime) {
+    this.createTime = createTime;
+  }
 }

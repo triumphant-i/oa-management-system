@@ -38,4 +38,9 @@ public interface ApprovalService extends IService<Approval> {
      * 发布 WITHDRAWN 事件，通知当前审批人
      */
     int withdrawApproval(Integer id, Integer applicantId, LocalDateTime updateTime, Integer approverId, String approverName);
+
+    /**
+     * 查询我的审批列表（分页）
+     */
+    com.southwind.vo.PageVO listMyApprovals(Integer applicantId, String status, int page, int size);
 }

@@ -581,8 +581,8 @@ const onSubmit = async () => {
       organizerId: employeeId.value,
       organizerName: employeeName.value,
       title: formData.value.title,
-      startTime: `${formData.value.date}T${formData.value.startTime}:00`,
-      endTime: `${formData.value.date}T${formData.value.endTime}:00`,
+      startTime: `${formData.value.date} ${formData.value.startTime}:00`,
+      endTime: `${formData.value.date} ${formData.value.endTime}:00`,
       participants: participantNames,
       participantIds: participantIds,
       remark: formData.value.description || ''

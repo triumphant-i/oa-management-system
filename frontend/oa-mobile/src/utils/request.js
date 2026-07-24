@@ -5,10 +5,7 @@ import router from '@/router'
 // 创建axios实例
 const request = axios.create({
   baseURL: 'http://localhost:8080', // 后端API地址
-  timeout: 10000, // 请求超时时间
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  timeout: 10000 // 请求超时时间
 })
 
 // 请求拦截器
@@ -19,6 +16,11 @@ request.interceptors.request.use(
     if (token) {
       // 在请求头中添加JWT Token
       config.headers['Authorization'] = `Bearer ${token}`
+    }
+    
+    // 如果不是FormData请求，设置默认的Content-Type
+    if (!(config.data instanceof FormData)) {
+      config.headers['Content-Type'] = 'application/json'
     }
     return config
   },

@@ -16,7 +16,8 @@ import Apply from '../views/Apply.vue'
 import Profile from '../views/Profile.vue'
 import ApprovalDetail from '../views/ApprovalDetail.vue'
 import ApplyDetail from '../views/ApplyDetail.vue'
-import System from '../views/System.vue'
+import MyApplications from '../views/MyApplications.vue'
+
 import Custom from '../views/Custom.vue'
 import Message from '../views/Message.vue'
 
@@ -35,12 +36,13 @@ const routes = [
   { path: '/profile', name: 'Profile', component: Profile },
   { path: '/approval/detail/:id', name: 'ApprovalDetail', component: ApprovalDetail },
   { path: '/apply/detail/:id', name: 'ApplyDetail', component: ApplyDetail },
+  { path: '/my-applications', name: 'MyApplications', component: MyApplications },
   { path: '/meeting', name: 'Meeting', component: Meeting },
   { path: '/meeting/detail/:id', name: 'MeetingDetail', component: MeetingDetail },
   { path: '/meeting/reserve/:id?', name: 'MeetingReserve', component: MeetingReserve },
   { path: '/meeting/control/:id', name: 'MeetingControl', component: MeetingControl },
   { path: '/custom', name: 'Custom', component: Custom },
-  { path: '/system', name: 'System', component: System },
+  
   { path: '/message', name: 'Message', component: Message }
 ]
 

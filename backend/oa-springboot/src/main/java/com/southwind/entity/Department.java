@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import lombok.Data;
@@ -71,6 +72,13 @@ public class Department implements Serializable {
   private String description;
 
   /**
+   * 版本号（乐观锁）
+   */
+  @Version
+  @TableField("version")
+  private Integer version;
+
+  /**
    * 创建时间
    */
   private LocalDateTime createTime;
@@ -117,6 +125,10 @@ public class Department implements Serializable {
     return description;
   }
 
+  public Integer getVersion() {
+    return version;
+  }
+
   // 手动添加 setter 方法
   public void setId(Integer id) {
     this.id = id;
@@ -152,6 +164,10 @@ public class Department implements Serializable {
 
   public void setDescription(String description) {
     this.description = description;
+  }
+
+  public void setVersion(Integer version) {
+    this.version = version;
   }
 
 }

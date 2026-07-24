@@ -36,6 +36,24 @@ public class Attendance implements Serializable {
 
   private String status;
 
+  @TableField("late_minutes")
+  private Integer lateMinutes;
+
+  @TableField("early_minutes")
+  private Integer earlyMinutes;
+
+  @TableField("overtime_before")
+  private Double overtimeBefore;
+
+  @TableField("overtime_after")
+  private Double overtimeAfter;
+
+  @TableField("work_hours")
+  private Double workHours;
+
+  @TableField("attendance_status")
+  private String attendanceStatus;
+
   private String remark;
 
   private LocalDateTime createTime;
@@ -108,6 +126,54 @@ public class Attendance implements Serializable {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public Integer getLateMinutes() {
+    return lateMinutes;
+  }
+
+  public void setLateMinutes(Integer lateMinutes) {
+    this.lateMinutes = lateMinutes;
+  }
+
+  public Integer getEarlyMinutes() {
+    return earlyMinutes;
+  }
+
+  public void setEarlyMinutes(Integer earlyMinutes) {
+    this.earlyMinutes = earlyMinutes;
+  }
+
+  public Double getOvertimeBefore() {
+    return overtimeBefore;
+  }
+
+  public void setOvertimeBefore(Double overtimeBefore) {
+    this.overtimeBefore = overtimeBefore;
+  }
+
+  public Double getOvertimeAfter() {
+    return overtimeAfter;
+  }
+
+  public void setOvertimeAfter(Double overtimeAfter) {
+    this.overtimeAfter = overtimeAfter;
+  }
+
+  public Double getWorkHours() {
+    return workHours;
+  }
+
+  public void setWorkHours(Double workHours) {
+    this.workHours = workHours;
+  }
+
+  public String getAttendanceStatus() {
+    return attendanceStatus;
+  }
+
+  public void setAttendanceStatus(String attendanceStatus) {
+    this.attendanceStatus = attendanceStatus;
   }
 
   public String getRemark() {

@@ -11,10 +11,7 @@ export function uploadAttachment(file, businessId, businessType = 'approval') {
   return request({
     url: '/attachment/upload',
     method: 'post',
-    data: formData,
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
+    data: formData
   })
 }
 

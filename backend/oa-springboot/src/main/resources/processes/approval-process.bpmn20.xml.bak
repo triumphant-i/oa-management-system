@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://flowable.org/test"
+             id="Definitions_approvalProcess">
+
+  <!-- 通用审批工作流流程定义
+       六种单据类型（请假/出差/加班/报销/采购/补卡）复用同一套骨架
+       通过 DMN 决策表实现不同单据类型的分级审批规则
+  -->
+  <process id="approvalProcess" name="OA系统通用审批工作流" isExecutable="true">
+    
+    <!-- 开始事件 -->
+    <startEvent id="StartEvent_approval" name="审批流程开始">
+      <extensionElements>
+        <flowable:executionListener event="start" delegateExpression="${approvalRoleResolverDelegate}"/>
+      </extensionElements>
+    </startEvent>
+
+    <!-- 审批方式判断网关（根据 signType 流程变量分流）-->
+    <exclusiveGateway id="SignTypeGateway" name="按审批方式分流"/>
+
+    <!-- ===== 分支 1：单签 ===== -->
+    <serviceTask id="SingleSignResolverTask" name="解析单签审批人"
+                 flowable:delegateExpression="${approvalRoleResolverDelegate}">
+    </serviceTask>
+
+    <userTask id="SingleSignApprovalTask" name="单级审批"
+              flowable:assignee="${approverList[0]}">
+      <extensionElements>
+        <flowable:taskListener event="create" 
+                               class="com.southwind.flowable.listener.ApprovalTaskListener"/>
+      </extensionElements>
+    </userTask>
+
+    <!-- ===== 分支 2：并行会签 ===== -->
+    <serviceTask id="ParallelSignResolverTask" name="解析会签审批人"
+                 flowable:delegateExpression="${approvalRoleResolverDelegate}">
+    </serviceTask>
+
+    <userTask id="ParallelSignApprovalTask" name="并行会签"
+              flowable:assignee="${approver}">
+      <multiInstanceLoopCharacteristics isSequential="false"
+                                        flowable:collection="approverList"
+                                        flowable:elementVariable="approver">
+        <completionCondition xsi:type="tFormalExpression">${nrOfCompletedInstances == nrOfInstances or outcome == 'REJECT'}</completionCondition>
+      </multiInstanceLoopCharacteristics>
+      <extensionElements>
+        <flowable:taskListener event="create" 
+                               class="com.southwind.flowable.listener.ApprovalTaskListener"/>
+        <flowable:taskListener event="complete" 
+                               class="com.southwind.flowable.listener.ParallelApprovalCompleteListener"/>
+      </extensionElements>
+    </userTask>
+
+    <!-- 会签结果判断 -->
+    <exclusiveGateway id="ParallelResultGateway" name="会签是否全通过"/>
+
+    <!-- ===== 分支 3：会签后串签 ===== -->
+    <!-- 第一级：并行会签 -->
+    <serviceTask id="FirstLevelResolverTask" name="解析第一级审批人"
+                 flowable:delegateExpression="${approvalRoleResolverDelegate}">
+    </serviceTask>
+
+    <userTask id="FirstLevelParallelTask" name="第一级并行会签"
+              flowable:assignee="${approver}">
+      <multiInstanceLoopCharacteristics isSequential="false"
+                                        flowable:collection="approverList"
+                                        flowable:elementVariable="approver">
+        <completionCondition xsi:type="tFormalExpression">${nrOfCompletedInstances == nrOfInstances or outcome == 'REJECT'}</completionCondition>
+      </multiInstanceLoopCharacteristics>
+      <extensionElements>
+        <flowable:taskListener event="create" 
+                               class="com.southwind.flowable.listener.ApprovalTaskListener"/>
+        <flowable:taskListener event="complete" 
+                               class="com.southwind.flowable.listener.ParallelApprovalCompleteListener"/>
+      </extensionElements>
+    </userTask>
+
+    <!-- 第一级会签结果判断 -->
+    <exclusiveGateway id="FirstLevelResultGateway" name="第一级会签结果"/>
+
+    <!-- 第二级：串签最后一级 -->
+    <userTask id="SecondLevelSerialTask" name="第二级串签终审"
+              flowable:assignee="${approver}">
+      <extensionElements>
+        <flowable:taskListener event="create" 
+                               class="com.southwind.flowable.listener.ApprovalTaskListener"/>
+      </extensionElements>
+    </userTask>
+
+    <!-- 最终结果判断网关 -->
+    <exclusiveGateway id="FinalResultGateway" name="最终审批结果"/>
+
+    <!-- 结束事件：批准 -->
+    <endEvent id="ApprovedEndEvent" name="审批通过"/>
+
+    <!-- 结束事件：驳回 -->
+    <endEvent id="RejectedEndEvent" name="审批驳回"/>
+
+    <!-- 结束事件：已撤回 -->
+    <endEvent id="WithdrawnEndEvent" name="流程已撤回"/>
+
+    <!-- ===== 流程连接 ===== -->
+    
+    <!-- 开始 -> 方式判断网关 -->
+    <sequenceFlow id="flow_start_to_gateway" sourceRef="StartEvent_approval" targetRef="SignTypeGateway"/>
+
+    <!-- 网关 -> 单签 (signType == 'SINGLE') -->
+    <sequenceFlow id="flow_to_single" sourceRef="SignTypeGateway" targetRef="SingleSignResolverTask">
+      <conditionExpression xsi:type="tFormalExpression">${signType == 'SINGLE'}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- 单签解析 -> 单签任务 -->
+    <sequenceFlow id="flow_single_resolver_to_task" sourceRef="SingleSignResolverTask" targetRef="SingleSignApprovalTask"/>
+
+    <!-- 网关 -> 并行会签 (signType == 'PARALLEL') -->
+    <sequenceFlow id="flow_to_parallel" sourceRef="SignTypeGateway" targetRef="ParallelSignResolverTask">
+      <conditionExpression xsi:type="tFormalExpression">${signType == 'PARALLEL'}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- 并行会签解析 -> 并行会签任务 -->
+    <sequenceFlow id="flow_parallel_resolver_to_task" sourceRef="ParallelSignResolverTask" targetRef="ParallelSignApprovalTask"/>
+
+    <!-- 网关 -> 第一级并行会签 (signType == 'SERIAL_AFTER_PARALLEL') -->
+    <sequenceFlow id="flow_to_serial_parallel" sourceRef="SignTypeGateway" targetRef="FirstLevelResolverTask">
+      <conditionExpression xsi:type="tFormalExpression">${signType == 'SERIAL_AFTER_PARALLEL'}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- 第一级解析 -> 第一级任务 -->
+    <sequenceFlow id="flow_first_resolver_to_task" sourceRef="FirstLevelResolverTask" targetRef="FirstLevelParallelTask"/>
+
+    <!-- 单签 -> 最终结果判断 -->
+    <sequenceFlow id="flow_single_to_result" sourceRef="SingleSignApprovalTask" targetRef="FinalResultGateway"/>
+
+    <!-- 并行会签 -> 会签结果判断 -->
+    <sequenceFlow id="flow_parallel_to_check" sourceRef="ParallelSignApprovalTask" targetRef="ParallelResultGateway"/>
+
+    <!-- 会签结果判断：全通过 -> 最终结果判断 -->
+    <sequenceFlow id="flow_parallel_all_approved" sourceRef="ParallelResultGateway" targetRef="FinalResultGateway">
+      <conditionExpression xsi:type="tFormalExpression">${isAllApproved == null or isAllApproved}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- 会签结果判断：有驳回 -> 驳回结束 -->
+    <sequenceFlow id="flow_parallel_rejected" sourceRef="ParallelResultGateway" targetRef="RejectedEndEvent">
+      <conditionExpression xsi:type="tFormalExpression">${isAllApproved != null and !isAllApproved}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- 第一级并行会签 -> 第一级结果判断 -->
+    <sequenceFlow id="flow_first_level_to_check" sourceRef="FirstLevelParallelTask" targetRef="FirstLevelResultGateway"/>
+
+    <!-- 第一级全通过 -> 第二级串签 -->
+    <sequenceFlow id="flow_first_approved_to_second" sourceRef="FirstLevelResultGateway" targetRef="SecondLevelSerialTask">
+      <conditionExpression xsi:type="tFormalExpression">${isAllApproved == null or isAllApproved}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- 第一级有驳回 -> 驳回结束 -->
+    <sequenceFlow id="flow_first_rejected" sourceRef="FirstLevelResultGateway" targetRef="RejectedEndEvent">
+      <conditionExpression xsi:type="tFormalExpression">${isAllApproved != null and !isAllApproved}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- 第二级串签 -> 最终结果判断 -->
+    <sequenceFlow id="flow_second_to_result" sourceRef="SecondLevelSerialTask" targetRef="FinalResultGateway"/>
+
+    <!-- 最终结果判断：批准 -->
+    <sequenceFlow id="flow_final_approved" sourceRef="FinalResultGateway" targetRef="ApprovedEndEvent">
+      <conditionExpression xsi:type="tFormalExpression">${outcome == null or outcome == 'APPROVE'}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- 最终结果判断：驳回 -->
+    <sequenceFlow id="flow_final_rejected" sourceRef="FinalResultGateway" targetRef="RejectedEndEvent">
+      <conditionExpression xsi:type="tFormalExpression">${outcome == 'REJECT'}</conditionExpression>
+    </sequenceFlow>
+
+  </process>
+
+  <!-- BPMN 2.0 图形布局信息 -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_approvalProcess">
+    <bpmndi:BPMNPlane id="BPMNPlane_approvalProcess" bpmnElement="approvalProcess">
+      <!-- 具体坐标由 Flowable 引擎自动计算 -->
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

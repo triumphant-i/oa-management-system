@@ -65,3 +65,10 @@ export function withdrawApproval(id) {
     method: 'put'
   })
 }
+
+export function getApprovalProgress(id) {
+  return request({
+    url: `/approval/progress/${id}`,
+    method: 'get'
+  })
+}

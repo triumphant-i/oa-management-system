@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import lombok.Data;
@@ -62,6 +63,12 @@ public class Employee implements Serializable {
   private Integer departmentId;
 
   /**
+   * 班次ID
+   */
+  @TableField("shift_id")
+  private Integer shiftId;
+
+  /**
    * 职位
    */
   private String position;
@@ -85,6 +92,13 @@ public class Employee implements Serializable {
    * 入职日期
    */
   private String joinDate;
+
+  /**
+   * 版本号（乐观锁）
+   */
+  @Version
+  @TableField("version")
+  private Integer version;
 
   /**
    * 创建时间
@@ -129,6 +143,10 @@ public class Employee implements Serializable {
     return departmentId;
   }
 
+  public Integer getShiftId() {
+    return shiftId;
+  }
+
   public String getPosition() {
     return position;
   }
@@ -147,6 +165,10 @@ public class Employee implements Serializable {
 
   public String getJoinDate() {
     return joinDate;
+  }
+
+  public Integer getVersion() {
+    return version;
   }
 
   // 手动添加 setter 方法
@@ -182,6 +204,10 @@ public class Employee implements Serializable {
     this.departmentId = departmentId;
   }
 
+  public void setShiftId(Integer shiftId) {
+    this.shiftId = shiftId;
+  }
+
   public void setPosition(String position) {
     this.position = position;
   }
@@ -200,6 +226,10 @@ public class Employee implements Serializable {
 
   public void setJoinDate(String joinDate) {
     this.joinDate = joinDate;
+  }
+
+  public void setVersion(Integer version) {
+    this.version = version;
   }
 
 }

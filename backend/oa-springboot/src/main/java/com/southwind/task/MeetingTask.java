@@ -58,6 +58,8 @@ public class MeetingTask {
         queryWrapper.eq("status", "进行中");
         queryWrapper.gt("end_time", now);
         queryWrapper.le("end_time", tenMinutesLater);
+        // 只查询未发送过提醒的会议（使用nested确保OR在括号内，不破坏AND条件链）
+        queryWrapper.and(w -> w.isNull("is_reminded").or().eq("is_reminded", 0));
 
         List<Meeting> nearEndMeetings = meetingService.list(queryWrapper);
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
@@ -103,6 +105,11 @@ public class MeetingTask {
                     }
                 }
             }
+            
+            // 标记已发送提醒，避免重复发送
+            meeting.setIsReminded(1);
+            meeting.setUpdateTime(now);
+            meetingService.updateById(meeting);
         }
 
         if (!nearEndMeetings.isEmpty()) {

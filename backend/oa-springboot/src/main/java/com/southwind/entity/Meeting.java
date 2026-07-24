@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -81,9 +82,22 @@ public class Meeting implements Serializable {
   private LocalDateTime endTime;
 
   /**
-   * 状态(已预约/已取消/已完成)
+   * 状态(已预约/已取消/已完成/进行中)
    */
   private String status;
+
+  /**
+   * 是否已发送即将结束提醒(0-未发送, 1-已发送)
+   */
+  @TableField("is_reminded")
+  private Integer isReminded;
+
+  /**
+   * 版本号（乐观锁）
+   */
+  @Version
+  @TableField("version")
+  private Integer version = 0;
 
   /**
    * 备注
@@ -149,6 +163,14 @@ public class Meeting implements Serializable {
     return status;
   }
 
+  public Integer getIsReminded() {
+    return isReminded;
+  }
+
+  public Integer getVersion() {
+    return version;
+  }
+
   // 手动添加必要的 setter 方法
   public void setId(Integer id) {
     this.id = id;
@@ -196,6 +218,14 @@ public class Meeting implements Serializable {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public void setIsReminded(Integer isReminded) {
+    this.isReminded = isReminded;
+  }
+
+  public void setVersion(Integer version) {
+    this.version = version;
   }
 
   public void setCreateTime(LocalDateTime createTime) {

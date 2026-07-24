@@ -117,10 +117,36 @@ export function importEmployees(data) {
   })
 }
 
+// 下载员工导入模板
+export function downloadTemplate() {
+  return request({
+    url: '/employee/downloadTemplate',
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
+// Excel导入员工
+export function importExcel(data) {
+  return request({
+    url: '/employee/importExcel',
+    method: 'post',
+    data
+  })
+}
+
 // 获取部门列表（用于选择部门）
 export function getDepartmentList() {
   return request({
     url: '/department/list',
+    method: 'get'
+  })
+}
+
+// 获取班次列表（用于选择班次）
+export function getAllShiftList() {
+  return request({
+    url: '/shift/list',
     method: 'get'
   })
 }

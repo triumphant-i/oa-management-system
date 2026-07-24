@@ -21,10 +21,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 /**
  * 审批控制器
@@ -48,9 +45,14 @@ public class ApprovalController {
     @Autowired
     private AttendanceService attendanceService;
 
-    /**
-     * 提交申请
-     */
+    @Autowired(required = false)
+    private org.flowable.engine.TaskService flowableTaskService;
+
+    @Autowired(required = false)
+    private org.flowable.engine.HistoryService flowableHistoryService;
+
+    @Autowired
+    private com.southwind.service.flowable.ApprovalFlowableService approvalFlowableService;
     @PostMapping("/submit")
     public ResultVO submit(@RequestBody Approval approval) {
         UserContext.UserInfo currentUser = UserContext.getCurrentUser();
@@ -196,9 +198,16 @@ public class ApprovalController {
     }
 
     /**
-     * 待审批列表（按角色过滤）
-     * 系统管理员：查看所有待审批申请
-     * 部门主管：只查看自己部门的待审批申请
+     * 待审批列表（基于 Flowable 任务数据为准）
+     * 系统管理员：查看所有待审批任务对应的申请
+     * 部门主管：查看分配给自己且属于自己部门的待审批申请
+     * 其他用户：查看分配给自己的待审批申请
+     *
+     * ===== 关键改进 =====
+     * 1. 不再仅依赖 t_approval 的部门ID字段过滤
+     * 2. 优先查询 Flowable TaskService 中分配给当前用户的任务
+     * 3. 根据这些任务的流程实例 ID，反查对应的审批记录
+     * 4. 这样可以确保"待审批列表"和"Flowable 真实分配"保持一致
      */
     @GetMapping("/pendingList")
     public ResultVO pendingList(
@@ -213,25 +222,110 @@ public class ApprovalController {
             return ResultVOUtil.success(Collections.emptyList());
         }
 
-        QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("status", STATUS_PENDING);
+        List<Approval> resultList = new ArrayList<>();
 
-        if (currentUser.getRole() == RoleType.DEPARTMENT_MANAGER) {
-            if (currentUser.getDepartmentId() == null) {
-                return ResultVOUtil.success(Collections.emptyList());
+        try {
+            // 系统管理员：查看所有待审批任务
+            if (currentUser.getRole() == RoleType.SYSTEM_ADMIN || currentUser.getRole() == RoleType.PROCESS_ADMIN) {
+                // 直接从 DB 查询所有待审批的记录（保证准确性）
+                QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
+                queryWrapper.eq("status", STATUS_PENDING).orderByAsc("create_time");
+                resultList = approvalService.list(queryWrapper);
+
+                // 额外尝试从 Flowable 补充：如果 Flowable 有活跃任务但 DB 没有对应的待审批记录，
+                // 说明部分记录的 status 可能不匹配，也把它们加入结果列表
+                if (flowableTaskService != null) {
+                    List<org.flowable.task.api.Task> allTasks = flowableTaskService.createTaskQuery()
+                            .active().list();
+
+                    Set<Integer> existingIds = new HashSet<>();
+                    for (Approval a : resultList) existingIds.add(a.getId());
+
+                    Set<Integer> flowableApprovalIds = new HashSet<>();
+                    for (org.flowable.task.api.Task task : allTasks) {
+                        try {
+                            Object idObj = flowableTaskService.getVariable(task.getId(), "approvalId");
+                            if (idObj != null) {
+                                Integer aid = null;
+                                if (idObj instanceof Integer) aid = (Integer) idObj;
+                                else if (idObj instanceof Long) aid = ((Long) idObj).intValue();
+                                else if (idObj instanceof String) aid = Integer.parseInt((String) idObj);
+                                if (aid != null) flowableApprovalIds.add(aid);
+                            }
+                        } catch (Exception e) { /* ignore */ }
+                    }
+
+                    // 把 Flowable 中存在但 DB 主查询没找到的 approvalId 也查出来
+                    for (Integer fid : flowableApprovalIds) {
+                        if (!existingIds.contains(fid)) {
+                            Approval extra = approvalService.getById(fid);
+                            if (extra != null) {
+                                resultList.add(extra);
+                                logger.info("Added missing Flowable approval: id={}, status={}", fid, extra.getStatus());
+                            }
+                        }
+                    }
+
+                    logger.info("pendingList for SYSTEM_ADMIN: DB={}, Flowable tasks={}, combined={}",
+                        resultList.size(), allTasks.size(), resultList.size());
+                }
             }
-            queryWrapper.eq("applicant_department_id", currentUser.getDepartmentId());
-        } else if (currentUser.getRole() != RoleType.SYSTEM_ADMIN && currentUser.getRole() != RoleType.PROCESS_ADMIN) {
-            return ResultVOUtil.success(Collections.emptyList());
+            // 部门主管：查看分配给自己的待审批任务对应的申请
+            else if (currentUser.getRole() == RoleType.DEPARTMENT_MANAGER) {
+                if (currentUser.getDepartmentId() == null) {
+                    return ResultVOUtil.success(Collections.emptyList());
+                }
+
+                // 直接从 DB 查询
+                QueryWrapper<Approval> dbQuery = new QueryWrapper<>();
+                dbQuery.eq("status", STATUS_PENDING)
+                       .eq("applicant_department_id", currentUser.getDepartmentId())
+                       .orderByAsc("create_time");
+                resultList = approvalService.list(dbQuery);
+
+                // 从 Flowable 补充
+                if (flowableTaskService != null) {
+                    String assignee = String.valueOf(currentUser.getUserId());
+                    List<org.flowable.task.api.Task> myTasks = flowableTaskService.createTaskQuery()
+                            .taskAssignee(assignee).active().list();
+
+                    Set<Integer> existingIds = new HashSet<>();
+                    for (Approval a : resultList) existingIds.add(a.getId());
+
+                    for (org.flowable.task.api.Task task : myTasks) {
+                        try {
+                            Object idObj = flowableTaskService.getVariable(task.getId(), "approvalId");
+                            if (idObj != null) {
+                                Integer aid = null;
+                                if (idObj instanceof Integer) aid = (Integer) idObj;
+                                else if (idObj instanceof Long) aid = ((Long) idObj).intValue();
+                                else if (idObj instanceof String) aid = Integer.parseInt((String) idObj);
+                                if (aid != null && !existingIds.contains(aid)) {
+                                    Approval extra = approvalService.getById(aid);
+                                    if (extra != null) resultList.add(extra);
+                                }
+                            }
+                        } catch (Exception e) { /* ignore */ }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error querying pending list: {}", e.getMessage(), e);
+            QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("status", STATUS_PENDING);
+            if (currentUser.getRole() == RoleType.DEPARTMENT_MANAGER && currentUser.getDepartmentId() != null) {
+                queryWrapper.eq("applicant_department_id", currentUser.getDepartmentId());
+            }
+            queryWrapper.orderByAsc("create_time");
+            resultList = approvalService.list(queryWrapper);
         }
 
-        queryWrapper.orderByAsc("create_time");
-        List<Approval> list = approvalService.list(queryWrapper);
-        return ResultVOUtil.success(list);
+        return ResultVOUtil.success(resultList);
     }
 
     /**
      * 获取待审批数量（用于红点提示）
+     * 基于 Flowable 任务数据为准
      */
     @GetMapping("/pendingCount")
     public ResultVO pendingCount(
@@ -246,25 +340,58 @@ public class ApprovalController {
             return ResultVOUtil.success(0);
         }
 
-        QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("status", STATUS_PENDING);
+        long count = 0;
 
-        if (currentUser.getRole() == RoleType.DEPARTMENT_MANAGER) {
-            if (currentUser.getDepartmentId() == null) {
-                return ResultVOUtil.success(0);
+        try {
+            if (currentUser.getRole() == RoleType.SYSTEM_ADMIN || currentUser.getRole() == RoleType.PROCESS_ADMIN) {
+                // 优先从 DB 查询，确保计数和列表一致
+                QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
+                queryWrapper.eq("status", STATUS_PENDING);
+                count = approvalService.count(queryWrapper);
+                logger.info("Pending count for SYSTEM_ADMIN (DB): {}", count);
+            } else if (currentUser.getRole() == RoleType.DEPARTMENT_MANAGER) {
+                if (currentUser.getDepartmentId() == null) {
+                    return ResultVOUtil.success(0);
+                }
+                
+                if (flowableTaskService != null) {
+                    String assignee = String.valueOf(currentUser.getUserId());
+                    count = flowableTaskService.createTaskQuery()
+                            .taskAssignee(assignee)
+                            .active()
+                            .count();
+                    logger.info("Pending task count for DEPARTMENT_MANAGER userId={}: {}", 
+                        currentUser.getUserId(), count);
+                } else {
+                    QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
+                    queryWrapper.eq("status", STATUS_PENDING)
+                            .eq("applicant_department_id", currentUser.getDepartmentId());
+                    count = approvalService.count(queryWrapper);
+                }
             }
-            queryWrapper.eq("applicant_department_id", currentUser.getDepartmentId());
-        } else if (currentUser.getRole() != RoleType.SYSTEM_ADMIN && currentUser.getRole() != RoleType.PROCESS_ADMIN) {
-            return ResultVOUtil.success(0);
+        } catch (Exception e) {
+            logger.error("Error querying pending count: {}", e.getMessage(), e);
+            // 异常时降级到传统查询
+            QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("status", STATUS_PENDING);
+            if (currentUser.getRole() == RoleType.DEPARTMENT_MANAGER && currentUser.getDepartmentId() != null) {
+                queryWrapper.eq("applicant_department_id", currentUser.getDepartmentId());
+            }
+            count = approvalService.count(queryWrapper);
         }
 
-        long count = approvalService.count(queryWrapper);
         return ResultVOUtil.success(count);
     }
 
     /**
      * 审批处理（同意/拒绝）
      * 前端传入：{ id, status, approverId, approverName, approveReason }
+     * 
+     * 整个流程：
+     * 1. 检查申请是否存在且状态为"待审批"
+     * 2. 检查当前用户权限（与Flowable流程集成）
+     * 3. 完成Flowable任务（不更新t_approval状态）
+     * 4. 由流程结束监听器在整个流程完成时更新t_approval的最终状态
      */
     @PutMapping("/approve")
     public ResultVO approve(@RequestBody Approval approval) {
@@ -283,38 +410,50 @@ public class ApprovalController {
         // 1. 验证申请是否存在
         Approval existing = approvalService.getById(approval.getId());
         if (existing == null) {
+            logger.warn("Approval not found: id={}", approval.getId());
             return ResultVOUtil.fail("申请不存在");
         }
 
+        logger.info("Processing approval: id={}, approverId={}, targetStatus={}, processInstanceId={}", 
+                approval.getId(), currentUser.getUserId(), targetStatus, existing.getProcessInstanceId());
+
         // 2. 验证状态是否为"待审批"
         if (!STATUS_PENDING.equals(existing.getStatus())) {
+            logger.warn("Approval not in pending status: id={}, currentStatus={}", 
+                    approval.getId(), existing.getStatus());
             return ResultVOUtil.fail("只能处理待审批的申请");
         }
+
+        // 3. 检查权限（与Flowable流程集成）
         if (!canApprove(currentUser, existing)) {
+            logger.warn("Permission denied for approval: id={}, userId={}, role={}, processInstanceId={}", 
+                    approval.getId(), currentUser.getUserId(), currentUser.getRole(), existing.getProcessInstanceId());
             return ResultVOUtil.fail("无权限审批该申请");
         }
 
-        // 3. 带状态条件更新，防止重复提交覆盖
+        // 4. 准备审批数据
         Approval updateApproval = new Approval();
         updateApproval.setId(existing.getId());
-        updateApproval.setStatus(targetStatus);
+        updateApproval.setStatus(targetStatus);  // ⚠️ 临时设置，会被流程监听器覆盖
         updateApproval.setApproverId(currentUser.getUserId());
         updateApproval.setApproverName(currentUser.getName() != null ? currentUser.getName() : currentUser.getUsername());
         updateApproval.setApproveReason(approval.getApproveReason());
         updateApproval.setApproveTime(LocalDateTime.now());
         updateApproval.setUpdateTime(LocalDateTime.now());
 
+        // 5. 调用Service处理审批（完成Flowable任务）
         int affected = approvalService.approveApproval(updateApproval, STATUS_APPROVED.equals(targetStatus));
         if (affected == 0) {
+            logger.warn("Failed to process approval: id={}, userId={}", approval.getId(), currentUser.getUserId());
             return ResultVOUtil.fail("申请状态已变更，请刷新后重试");
         }
 
-        // 5. 如果是补卡申请且审批通过，更新考勤记录
-        logger.info("approve: status={}, approvalType={}, equalsCheck={}, cardEquals={}", 
-            targetStatus, existing.getApprovalType(),
-            STATUS_APPROVED.equals(targetStatus), "card".equals(existing.getApprovalType()));
+        logger.info("Approval processed successfully: id={}, userId={}, targetStatus={}", 
+                approval.getId(), currentUser.getUserId(), targetStatus);
+
+        // 6. 如果是补卡申请且审批通过，更新考勤记录
         if (STATUS_APPROVED.equals(targetStatus) && "card".equals(existing.getApprovalType())) {
-            logger.info("approve: calling processCardApproval");
+            logger.info("Processing card approval: id={}", approval.getId());
             processCardApproval(existing);
         }
 
@@ -451,16 +590,96 @@ public class ApprovalController {
         return ResultVOUtil.success(approval);
     }
 
+    /**
+     * ⭐ 查询我的申请列表
+     * 前端调用：GET /approval/my?status=xxx&page=1&size=10
+     * 
+     * @param status 可选的状态过滤（例如：待审批、已通过、已拒绝）
+     * @param page 页码，默认 1
+     * @param size 每页数量，默认 10
+     * @return 分页的申请列表
+     */
+    @GetMapping("/my")
+    public ResultVO listMyApprovals(
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size) {
+        UserContext.UserInfo currentUser = UserContext.getCurrentUser();
+        if (currentUser == null) {
+            return ResultVOUtil.fail("未登录");
+        }
+        
+        logger.info("查询我的申请: userId={}, status={}, page={}, size={}", 
+            currentUser.getUserId(), status, page, size);
+        
+        // 调用服务层方法
+        PageVO pageVO = approvalService.listMyApprovals(
+            currentUser.getUserId(), 
+            status, 
+            page, 
+            size
+        );
+        
+        return ResultVOUtil.success(pageVO);
+    }
+
     private boolean canApprove(UserContext.UserInfo currentUser, Approval approval) {
         RoleType role = currentUser.getRole();
+        
+        // 系统管理员和流程管理员可以审批任何申请
         if (role == RoleType.SYSTEM_ADMIN || role == RoleType.PROCESS_ADMIN) {
             return true;
         }
-        if (role == RoleType.DEPARTMENT_MANAGER) {
-            return currentUser.getDepartmentId() != null
-                    && currentUser.getDepartmentId().equals(approval.getApplicantDepartmentId());
+
+        // 对于其他角色，需要检查：
+        // 1. 申请是否关联了Flowable流程
+        // 2. 当前用户是否被分配了该流程的待办任务
+        
+        if (approval.getProcessInstanceId() == null || approval.getProcessInstanceId().isEmpty()) {
+            // 如果没有Flowable流程，降级到传统的角色+部门权限检查
+            if (role == RoleType.DEPARTMENT_MANAGER) {
+                return currentUser.getDepartmentId() != null
+                        && currentUser.getDepartmentId().equals(approval.getApplicantDepartmentId());
+            }
+            return false;
         }
-        return false;
+
+        // 有Flowable流程：检查当前用户是否被分配了任务
+        String assignee = String.valueOf(currentUser.getUserId());
+        return hasFlowableTask(approval.getProcessInstanceId(), assignee);
+    }
+
+    /**
+     * 检查当前用户是否在该流程中被分配了待办任务
+     * @param processInstanceId 流程实例ID
+     * @param assignee 任务分配人（用户ID字符串）
+     * @return true 表示有待办任务
+     */
+    private boolean hasFlowableTask(String processInstanceId, String assignee) {
+        if (flowableTaskService == null) {
+            // 如果Flowable TaskService不可用，使用传统权限检查
+            logger.warn("Flowable TaskService not available, using traditional permission check");
+            return false;
+        }
+
+        try {
+            // 查询当前用户在该流程中是否有待办任务
+            long taskCount = flowableTaskService.createTaskQuery()
+                    .taskAssignee(assignee)
+                    .processInstanceId(processInstanceId)
+                    .active()
+                    .count();
+            
+            boolean hasTask = taskCount > 0;
+            logger.info("Flowable task check: processInstanceId={}, assignee={}, hasTask={}", 
+                    processInstanceId, assignee, hasTask);
+            
+            return hasTask;
+        } catch (Exception e) {
+            logger.error("Error checking Flowable task for processInstanceId={}, assignee={}: {}", 
+                    processInstanceId, assignee, e.getMessage());
+            return false;
+        }
     }
 
     private String normalizeApproveStatus(String status) {
@@ -540,6 +759,124 @@ public class ApprovalController {
                 return null;
             default:
                 return "审批类型不合法";
+        }
+    }
+
+    /**
+     * 临时接口：为没有流程实例的待审批记录重新启动流程
+     * 仅限内部测试使用！
+     */
+    @GetMapping("/fixExistingRecords")
+    public ResultVO fixExistingRecords() {
+        logger.info("===== 开始修复现有审批记录 =====");
+        try {
+            QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("status", STATUS_PENDING)
+                       .isNull("process_instance_id");
+            List<Approval> pendingApprovals = approvalService.list(queryWrapper);
+            
+            logger.info("找到 {} 条没有流程实例的待审批记录", pendingApprovals.size());
+            
+            int fixedCount = 0;
+            for (Approval approval : pendingApprovals) {
+                try {
+                    logger.info("正在修复审批记录 ID={}, 类型={}, 申请人={}", 
+                        approval.getId(), approval.getApprovalType(), approval.getApplicantName());
+                    
+                    String processInstanceId = approvalFlowableService.startApprovalProcess(approval);
+                    
+                    Approval updateApproval = new Approval();
+                    updateApproval.setId(approval.getId());
+                    updateApproval.setProcessInstanceId(processInstanceId);
+                    approvalService.updateById(updateApproval);
+                    
+                    logger.info("✓ 审批记录 ID={} 修复成功，流程实例ID={}", 
+                        approval.getId(), processInstanceId);
+                    fixedCount++;
+                } catch (Exception e) {
+                    logger.error("✗ 修复审批记录 ID={} 失败: {}", approval.getId(), e.getMessage(), e);
+                }
+            }
+            
+            logger.info("===== 修复完成，共修复 {} 条记录 =====", fixedCount);
+            return ResultVOUtil.success("修复完成，共修复 " + fixedCount + " 条记录");
+        } catch (Exception e) {
+            logger.error("修复失败: {}", e.getMessage(), e);
+            return ResultVOUtil.fail("修复失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取审批进度信息
+     * 前端调用：GET /approval/progress/{id}
+     */
+    @GetMapping("/progress/{id}")
+    public ResultVO getApprovalProgress(@PathVariable("id") Integer id) {
+        Approval approval = approvalService.getById(id);
+        if (approval == null) {
+            return ResultVOUtil.fail("申请不存在");
+        }
+        
+        Map<String, Object> progress = new HashMap<>();
+        progress.put("approvalId", approval.getId());
+        progress.put("status", approval.getStatus());
+        progress.put("processInstanceId", approval.getProcessInstanceId());
+        
+        // 如果有流程实例，查询流程进度（使用历史任务查询获取完整信息）
+        if (approval.getProcessInstanceId() != null) {
+            try {
+                // 使用历史任务查询，这样可以获取已完成任务的结束时间
+                List<org.flowable.task.api.history.HistoricTaskInstance> historicTasks = 
+                    flowableHistoryService.createHistoricTaskInstanceQuery()
+                        .processInstanceId(approval.getProcessInstanceId())
+                        .orderByTaskCreateTime().asc()
+                        .list();
+                
+                List<Map<String, Object>> taskList = new ArrayList<>();
+                for (org.flowable.task.api.history.HistoricTaskInstance task : historicTasks) {
+                    Map<String, Object> taskInfo = new HashMap<>();
+                    taskInfo.put("id", task.getId());
+                    taskInfo.put("name", task.getName());
+                    taskInfo.put("assignee", task.getAssignee());
+                    taskInfo.put("createTime", task.getCreateTime());
+                    taskInfo.put("endTime", task.getEndTime());
+                    taskInfo.put("isCompleted", task.getEndTime() != null);
+                    taskList.add(taskInfo);
+                }
+                progress.put("tasks", taskList);
+            } catch (Exception e) {
+                logger.error("Error getting approval progress: {}", e.getMessage());
+                progress.put("tasks", Collections.emptyList());
+            }
+        } else {
+            progress.put("tasks", Collections.emptyList());
+        }
+        
+        return ResultVOUtil.success(progress);
+    }
+
+    /**
+     * 临时接口：为缺少 secondLevelApprover 变量的 SERIAL_AFTER_PARALLEL 流程补充变量
+     * 仅限内部测试使用！
+     */
+    @GetMapping("/fixSecondLevelApprover")
+    public ResultVO fixSecondLevelApprover() {
+        logger.info("===== 开始修复存量 SERIAL_AFTER_PARALLEL 流程 =====");
+        try {
+            QueryWrapper<Approval> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("status", STATUS_PENDING)
+                       .isNotNull("process_instance_id");
+            List<Approval> pendingApprovals = approvalService.list(queryWrapper);
+            
+            logger.info("找到 {} 条有流程实例的待审批记录", pendingApprovals.size());
+            
+            int fixedCount = approvalFlowableService.fixAllMissingSecondLevelApprovers(pendingApprovals);
+            
+            logger.info("===== 修复完成，共修复 {} 条 SERIAL_AFTER_PARALLEL 流程 =====", fixedCount);
+            return ResultVOUtil.success("修复完成，共修复 " + fixedCount + " 条 SERIAL_AFTER_PARALLEL 流程");
+        } catch (Exception e) {
+            logger.error("修复失败: {}", e.getMessage(), e);
+            return ResultVOUtil.fail("修复失败: " + e.getMessage());
         }
     }
 }

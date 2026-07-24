@@ -37,7 +37,10 @@
           @input="onSearch"
         />
       </div>
-      <div class="toolbar-right" v-if="role === 'SYSTEM_ADMIN' || role === 'DEPARTMENT_MANAGER'">
+      <div class="toolbar-right" v-if="role === 'SYSTEM_ADMIN'">
+        <van-button type="primary" size="small" @click="openAddModal">+ 添加</van-button>
+      </div>
+      <div class="toolbar-right" v-else-if="role === 'DEPARTMENT_MANAGER'">
         <van-button type="primary" size="small" @click="openAddModal">+ 添加</van-button>
       </div>
     </div>
@@ -159,12 +162,21 @@
             :rules="[{ required: true, message: '请输入职位' }]"
           />
           <van-field 
+            v-model="formData.username" 
+            label="账号名" 
+            placeholder="请输入登录账号"
+            :rules="[
+              { required: true, message: '请输入账号名' },
+              { minLength: 3, message: '账号名至少3个字符' }
+            ]"
+          />
+          <van-field 
             v-model="formData.phone" 
             label="电话" 
             placeholder="请输入电话"
             :rules="[
               { required: true, message: '请输入电话' },
-              { validator: (val) => /^1[3-9]\d{9}$/.test(val), message: '请输入正确手机号' }
+              { validator: validatePhone, message: '请输入正确的11位手机号' }
             ]"
           />
           <van-field 
@@ -173,7 +185,7 @@
             placeholder="请输入邮箱"
             :rules="[
               { required: true, message: '请输入邮箱' },
-              { validator: (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), message: '请输入正确邮箱' }
+              { validator: validateEmail, message: '请输入正确的邮箱格式' }
             ]"
           />
           <van-field 
@@ -199,6 +211,13 @@
             is-link
             @click="showDatePicker = true"
             :rules="[{ required: true, message: '请选择入职日期' }]"
+          />
+          <van-field 
+            v-model="formData.shiftName" 
+            label="班次" 
+            placeholder="请选择"
+            is-link
+            @click="showShiftPicker = true"
           />
         </van-cell-group>
 
@@ -247,6 +266,22 @@
       </div>
     </van-action-sheet>
 
+    <van-action-sheet v-model:show="showShiftPicker" title="选择班次">
+      <div class="picker-list">
+        <div class="picker-item" @click="selectShift(null); showShiftPicker = false">
+          <span>无班次</span>
+          <van-icon v-if="formData.shiftId === null" name="success" color="#3677ef" />
+        </div>
+        <div class="picker-item" v-for="item in shiftList" :key="item.id" @click="selectShift(item); showShiftPicker = false">
+          <div>
+            <span>{{ item.name }}</span>
+            <span style="font-size:12px;color:#888;margin-left:8px;">{{ formatShiftTime(item.workStart) }} - {{ formatShiftTime(item.workEnd) }}</span>
+          </div>
+          <van-icon v-if="formData.shiftId === item.id" name="success" color="#3677ef" />
+        </div>
+      </div>
+    </van-action-sheet>
+
     <van-calendar 
       v-model="dateValue"
       type="date" 
@@ -255,59 +290,6 @@
       @close="showDatePicker = false"
       title="选择入职日期"
     />
-
-    <van-popup 
-      v-if="role === 'SYSTEM_ADMIN'"
-      v-model:show="showImportModal" 
-      position="bottom" 
-      round 
-      style="padding:20px 16px 30px;"
-    >
-      <h3 style="text-align:center;margin-bottom:16px;">批量导入员工</h3>
-      
-      <div class="import-tip">
-        <van-icon name="info-o" size="16" color="#3677ef" />
-        <span>请下载模板，按格式填写后上传</span>
-      </div>
-      <van-button plain block size="small" @click="downloadTemplate" style="margin-bottom:16px;border-color:#3677ef;color:#3677ef;">
-        下载导入模板
-      </van-button>
-
-      <van-uploader 
-        v-model="importFiles" 
-        :max-count="1" 
-        accept=".xlsx,.xls,.csv"
-        @after-read="handleImportFile"
-        style="width:100%;"
-      >
-        <div class="upload-area">
-          <van-icon name="upload" size="32" color="#3677ef" />
-          <p>点击选择文件或拖拽上传</p>
-          <span style="font-size:12px;color:#bbb;">支持 .xlsx .xls .csv</span>
-        </div>
-      </van-uploader>
-
-      <div v-if="importPreview.length > 0" style="margin-top:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <span style="font-size:14px;font-weight:500;">预览 ({{ importPreview.length }}人)</span>
-        </div>
-        <div class="preview-list">
-          <div class="preview-item" v-for="(item, index) in importPreview.slice(0, 5)" :key="index">
-            <span>{{ item.name }}</span>
-            <span>{{ item.department }}</span>
-            <span>{{ item.position }}</span>
-          </div>
-          <div v-if="importPreview.length > 5" class="preview-more">
-            还有 {{ importPreview.length - 5 }} 人...
-          </div>
-        </div>
-        <van-button type="primary" block @click="confirmImport" :loading="importing" style="margin-top:12px;">
-          确认导入 ({{ importPreview.length }}人)
-        </van-button>
-      </div>
-
-      <van-button plain block @click="showImportModal = false" style="margin-top:12px;">取消</van-button>
-    </van-popup>
 
     <div class="bottom-bar">
       <van-button plain block size="large" @click="$router.back()" class="back-btn">
@@ -327,7 +309,7 @@ import {
   updateEmployee, 
   deleteEmployee as deleteEmpApi,
   getDepartmentList,
-  importEmployees
+  getAllShiftList
 } from '@/api/employee'
 
 const router = useRouter()
@@ -339,6 +321,7 @@ const allEmployees = ref([])
 const departmentList = ref([])
 const userDepartment = ref('研发部')
 const userDepartmentId = ref(null)
+const shiftList = ref([])
 
 const deptMap = {
   1: '技术部',
@@ -409,6 +392,22 @@ const roleOptions = [
   { label: '普通员工', value: 'EMPLOYEE' }
 ]
 
+// 手机号验证函数
+const validatePhone = (val) => {
+  if (!val) return false
+  // 验证11位手机号，第一位必须是1，第二位必须是3-9
+  const phoneRegex = /^1[3-9]\d{9}$/
+  return phoneRegex.test(val)
+}
+
+// 邮箱验证函数
+const validateEmail = (val) => {
+  if (!val) return false
+  // 严格的邮箱验证规则
+  const emailRegex = /^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]{0,61}[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/
+  return emailRegex.test(val)
+}
+
 const showModal = ref(false)
 const isEdit = ref(false)
 const submitting = ref(false)
@@ -424,7 +423,9 @@ const formData = ref({
   email: '',
   status: '',
   joinDate: '',
-  avatar: ''
+  avatar: '',
+  shiftId: null,
+  shiftName: ''
 })
 
 const showGenderPicker = ref(false)
@@ -432,7 +433,23 @@ const showDeptPicker = ref(false)
 const showStatusPicker = ref(false)
 const showDatePicker = ref(false)
 const showRolePicker = ref(false)
+const showShiftPicker = ref(false)
 const dateValue = ref(new Date())
+
+const selectShift = (item) => {
+  if (item) {
+    formData.value.shiftId = item.id
+    formData.value.shiftName = item.name
+  } else {
+    formData.value.shiftId = null
+    formData.value.shiftName = ''
+  }
+}
+
+const formatShiftTime = (timeStr) => {
+  if (!timeStr) return ''
+  return timeStr.substring(0, 5)
+}
 
 const selectDepartment = (item) => {
   formData.value.departmentId = item.id
@@ -458,13 +475,16 @@ const openAddModal = () => {
     departmentId: defaultDeptId,
     departmentName: getDeptName(defaultDeptId),
     position: '',
+    username: '',
     phone: '',
     email: '',
     role: 'EMPLOYEE',
     roleName: '普通员工',
     status: '在职',
     joinDate: '',
-    avatar: ''
+    avatar: '',
+    shiftId: null,
+    shiftName: ''
   }
   showModal.value = true
 }
@@ -477,6 +497,7 @@ const openAddModal = () => {
   isEdit.value = true
   editId.value = item.id
   const roleObj = roleOptions.find(r => r.value === item.role)
+  const shiftObj = shiftList.value.find(s => s.id === item.shiftId)
   formData.value = {
     name: item.name || '',
     gender: item.gender || '',
@@ -489,7 +510,9 @@ const openAddModal = () => {
     roleName: roleObj ? roleObj.label : '普通员工',
     status: item.status || '',
     joinDate: item.joinDate || '',
-    avatar: item.avatar || ''
+    avatar: item.avatar || '',
+    shiftId: item.shiftId || null,
+    shiftName: shiftObj ? shiftObj.name : ''
   }
   showModal.value = true
 }
@@ -504,9 +527,13 @@ const openAddModal = () => {
 
   submitting.value = true
   try {
-    const { departmentName, roleName, ...submitData } = formData.value
-    submitData.username = formData.value.phone
+    const { departmentName, roleName, shiftName, ...submitData } = formData.value
+    // 使用用户输入的username，不再自动使用phone作为username
     submitData.departmentId = parseInt(formData.value.departmentId)
+    
+    if (formData.value.shiftId !== null && formData.value.shiftId !== undefined) {
+      submitData.shiftId = parseInt(formData.value.shiftId)
+    }
     
     if (isEdit.value) {
       submitData.id = editId.value
@@ -613,93 +640,6 @@ const handleDelete = (item) => {
   }).catch(() => {})
 }
 
-const showImportModal = ref(false)
-const importFiles = ref([])
-const importPreview = ref([])
-const importing = ref(false)
-
-const downloadTemplate = () => {
-  const headers = '姓名,性别,部门,职位,电话,邮箱,状态(在职/试用期/已离职),入职日期\n'
-  const example = '张三,男,技术部,工程师,13800008888,zhangsan@company.com,在职,2024-01-15\n李四,女,产品部,产品经理,13800008889,lisi@company.com,在职,2023-06-01'
-  const content = headers + example
-  
-  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = '员工导入模板.csv'
-  link.click()
-  URL.revokeObjectURL(link.href)
-  showToast('模板已下载')
-}
-
-const handleImportFile = (file) => {
-  showToast('文件读取中...')
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    try {
-      const content = e.target.result
-      const lines = content.split('\n').filter(line => line.trim())
-      if (lines.length < 2) {
-        showToast('文件内容无效')
-        return
-      }
-      
-      const headers = lines[0].split(',')
-      const data = []
-      
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',')
-        if (values.length >= 7) {
-          const deptId = Object.keys(deptMap).find(key => deptMap[key] === values[2].trim())
-          data.push({
-            name: values[0].trim(),
-            gender: values[1].trim(),
-            departmentId: deptId ? parseInt(deptId) : 1,
-            position: values[3].trim(),
-            phone: values[4].trim(),
-            email: values[5].trim(),
-            status: values[6].trim(),
-            joinDate: values[7] ? values[7].trim() : ''
-          })
-        }
-      }
-      
-      importPreview.value = data
-      showToast(`解析成功，共 ${data.length} 人`)
-    } catch (error) {
-      console.error('解析文件失败：', error)
-      showToast('解析文件失败')
-    }
-  }
-  reader.readAsText(file.file)
-}
-
-const confirmImport = async () => {
-  if (importPreview.value.length === 0) {
-    showToast('请先上传文件')
-    return
-  }
-  
-  importing.value = true
-  try {
-    const res = await importEmployees(importPreview.value)
-    if (res.code === 0) {
-      showToast(`成功导入 ${res.data.success} 人，失败 ${res.data.failed} 人`)
-      loadEmployees()
-    } else {
-      showToast(res.message || '导入失败')
-    }
-  } catch (error) {
-    console.error('导入失败：', error)
-    showToast('导入失败')
-  } finally {
-    importing.value = false
-    showImportModal.value = false
-    importPreview.value = []
-    importFiles.value = []
-  }
-}
-
 const loadEmployees = async () => {
   loading.value = true
   try {
@@ -741,6 +681,17 @@ const loadDepartments = async () => {
   }
 }
 
+const loadShiftList = async () => {
+  try {
+    const res = await getAllShiftList()
+    if (res.code === 0 && res.data) {
+      shiftList.value = Array.isArray(res.data) ? res.data : []
+    }
+  } catch (error) {
+    console.error('加载班次列表失败：', error)
+  }
+}
+
 onMounted(() => {
   const storedRole = localStorage.getItem('role')
   const roleMap = {
@@ -767,6 +718,7 @@ onMounted(() => {
   
   loadEmployees()
   loadDepartments()
+  loadShiftList()
 })
 </script>
 

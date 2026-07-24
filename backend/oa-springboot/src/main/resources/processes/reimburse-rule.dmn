@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20151101/dmn.xsd"
+             xmlns:camunda="http://camunda.org/schema/1.0/dmn"
+             id="reimburseRuleDecisions"
+             name="报销单审批规则"
+             namespace="http://camunda.org/schema/1.0/dmn"
+             exporter="Flowable"
+             exporterVersion="6.8.0">
+
+  <!-- 报销单审批规则决策表
+       规则：按报销金额分级审批
+       - ≤3000元: 本部门经理单签
+       - 3000～10000元: 本部门经理+财务专员会签
+       - 10000～20000元: 本部门经理+财务经理会签
+       - >20000元: 本部门经理+财务经理会签后→总经理串签
+  -->
+  <decision id="reimburseRuleDecision" name="报销单规则决策表">
+    <decisionTable id="reimburseDecisionTable">
+      
+      <!-- 输入列 -->
+      <input id="reimburseAmountInput" label="报销金额">
+        <inputExpression id="reimburseAmountExpression" typeRef="number">
+          <text>amount</text>
+        </inputExpression>
+      </input>
+
+      <!-- 输出列 -->
+      <output id="requiredRolesOutput" label="需要的审批角色" name="requiredRoles" typeRef="string"/>
+      <output id="signTypeOutput" label="审批方式" name="signType" typeRef="string"/>
+
+      <!-- 规则1: ≤3000元 - 部门经理单签 -->
+      <rule id="reimburseRule1">
+        <inputEntry id="reimburseInput1">
+          <text>&lt;= 3000</text>
+        </inputEntry>
+        <outputEntry id="reimburseRolesOutput1">
+          <text>"DEPT_MANAGER"</text>
+        </outputEntry>
+        <outputEntry id="reimburseSignTypeOutput1">
+          <text>"SINGLE"</text>
+        </outputEntry>
+      </rule>
+
+      <!-- 规则2: 3000 ~ 10000元 - 部门经理+财务专员会签 -->
+      <rule id="reimburseRule2">
+        <inputEntry id="reimburseInput2">
+          <text>&gt; 3000 and &lt;= 10000</text>
+        </inputEntry>
+        <outputEntry id="reimburseRolesOutput2">
+          <text>"DEPT_MANAGER,FINANCE_STAFF"</text>
+        </outputEntry>
+        <outputEntry id="reimburseSignTypeOutput2">
+          <text>"PARALLEL"</text>
+        </outputEntry>
+      </rule>
+
+      <!-- 规则3: 10000 ~ 20000元 - 部门经理+财务经理会签 -->
+      <rule id="reimburseRule3">
+        <inputEntry id="reimburseInput3">
+          <text>&gt; 10000 and &lt;= 20000</text>
+        </inputEntry>
+        <outputEntry id="reimburseRolesOutput3">
+          <text>"DEPT_MANAGER,FINANCE_MANAGER"</text>
+        </outputEntry>
+        <outputEntry id="reimburseSignTypeOutput3">
+          <text>"PARALLEL"</text>
+        </outputEntry>
+      </rule>
+
+      <!-- 规则4: >20000元 - 部门经理+财务经理会签后→总经理串签 -->
+      <rule id="reimburseRule4">
+        <inputEntry id="reimburseInput4">
+          <text>&gt; 20000</text>
+        </inputEntry>
+        <outputEntry id="reimburseRolesOutput4">
+          <text>"DEPT_MANAGER,FINANCE_MANAGER,GM"</text>
+        </outputEntry>
+        <outputEntry id="reimburseSignTypeOutput4">
+          <text>"SERIAL_AFTER_PARALLEL"</text>
+        </outputEntry>
+      </rule>
+
+    </decisionTable>
+  </decision>
+
+</definitions>

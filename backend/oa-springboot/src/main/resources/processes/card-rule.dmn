@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20151101/dmn.xsd"
+             id="cardRuleDecisions"
+             name="补卡单审批规则"
+             namespace="http://camunda.org/schema/1.0/dmn"
+             exporter="Flowable"
+             exporterVersion="6.8.0">
+
+  <!-- 补卡单审批规则决策表
+       规则：考勤记录修正，风险低，不分级
+       - 所有补卡单：本部门经理单签
+  -->
+  <decision id="cardRuleDecision" name="补卡单规则决策表">
+    <decisionTable id="cardDecisionTable">
+      
+      <input id="cardDummyInput" label="占位字段">
+        <inputExpression id="cardDummyExpression" typeRef="string">
+          <text>approvalType</text>
+        </inputExpression>
+      </input>
+
+      <output id="cardRequiredRolesOutput" label="需要的审批角色" name="requiredRoles" typeRef="string"/>
+      <output id="cardSignTypeOutput" label="审批方式" name="signType" typeRef="string"/>
+
+      <!-- 规则：所有补卡单 - 部门经理单签 -->
+      <rule id="cardRule1">
+        <inputEntry id="cardInput1">
+          <text>"card"</text>
+        </inputEntry>
+        <outputEntry id="cardRolesOutput1">
+          <text>"DEPT_MANAGER"</text>
+        </outputEntry>
+        <outputEntry id="cardSignTypeOutput1">
+          <text>"SINGLE"</text>
+        </outputEntry>
+      </rule>
+
+    </decisionTable>
+  </decision>
+
+</definitions>

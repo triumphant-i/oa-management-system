@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.southwind.mapper.EmployeeMapper">
+
+    <!-- 自定义查询，覆盖MyBatis-Plus默认的select方法，避免使用work_start_time等不存在的字段 -->
+    <sql id="baseColumnList">
+        id, username, password, name, gender, phone, email, department_id, shift_id, position, status, role, avatar, join_date, version, create_time, update_time
+    </sql>
+
+    <select id="selectByUsername" resultType="com.southwind.entity.Employee">
+        SELECT <include refid="baseColumnList"/>
+        FROM t_employee
+        WHERE username = #{username}
+    </select>
+
+</mapper>

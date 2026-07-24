@@ -159,7 +159,14 @@ public class DepartmentController {
     @RequirePermission(roles = {RoleType.SYSTEM_ADMIN}, description = "更新部门")
     public ResultVO update(@RequestBody Department department) {
         boolean update = departmentService.updateById(department);
-        if (!update) return ResultVOUtil.fail("更新失败");
+        if (!update) {
+            // 检查是否是乐观锁冲突
+            Department dbDept = departmentService.getById(department.getId());
+            if (dbDept != null && department.getVersion() != null && !department.getVersion().equals(dbDept.getVersion())) {
+                return ResultVOUtil.fail("数据已被其他用户修改，请刷新后重试");
+            }
+            return ResultVOUtil.fail("更新失败");
+        }
         
         // 如果修改了父部门，需要更新层级和路径
         if (department.getParentId() != null) {
@@ -241,6 +248,7 @@ public class DepartmentController {
     public ResultVO assignManager(@RequestBody Map<String, Object> params) {
         Integer departmentId = (Integer) params.get("departmentId");
         Integer managerId = (Integer) params.get("managerId");
+        Integer version = (Integer) params.get("version");
         
         // 检查员工是否存在
         Employee employee = employeeService.getById(managerId);
@@ -254,19 +262,24 @@ public class DepartmentController {
             return ResultVOUtil.fail("部门不存在");
         }
         
+        // 检查乐观锁版本
+        if (version != null && !version.equals(department.getVersion())) {
+            return ResultVOUtil.fail("数据已被其他用户修改，请刷新后重试");
+        }
+        
         // 更新部门负责人
         Department updateDept = new Department();
         updateDept.setId(departmentId);
         updateDept.setManagerId(managerId);
         updateDept.setManagerName(employee.getName());
         updateDept.setManagerPhone(employee.getPhone());
+        updateDept.setVersion(version);
         
         boolean success = departmentService.updateById(updateDept);
-        if (success) {
-            return ResultVOUtil.success("负责人设置成功");
-        } else {
-            return ResultVOUtil.fail("负责人设置失败");
+        if (!success) {
+            return ResultVOUtil.fail("数据已被其他用户修改，请刷新后重试");
         }
+        return ResultVOUtil.success("负责人设置成功");
     }
 
     /**

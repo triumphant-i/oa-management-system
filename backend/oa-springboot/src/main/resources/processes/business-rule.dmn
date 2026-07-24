@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20151101/dmn.xsd"
+             id="businessRuleDecisions"
+             name="出差单审批规则"
+             namespace="http://camunda.org/schema/1.0/dmn"
+             exporter="Flowable"
+             exporterVersion="6.8.0">
+
+  <!-- 出差单审批规则决策表
+       规则：按出差天数分级审批（财务无参与）
+       - ≤5天: 本部门经理单签
+       - >5天: 本部门经理→总经理串签
+  -->
+  <decision id="businessRuleDecision" name="出差单规则决策表">
+    <decisionTable id="businessDecisionTable">
+      
+      <input id="businessDaysInput" label="出差天数">
+        <inputExpression id="businessDaysExpression" typeRef="number">
+          <text>businessDays</text>
+        </inputExpression>
+      </input>
+
+      <output id="businessRequiredRolesOutput" label="需要的审批角色" name="requiredRoles" typeRef="string"/>
+      <output id="businessSignTypeOutput" label="审批方式" name="signType" typeRef="string"/>
+
+      <!-- 规则1: ≤5天 - 部门经理单签 -->
+      <rule id="businessRule1">
+        <inputEntry id="businessInput1">
+          <text>&lt;= 5</text>
+        </inputEntry>
+        <outputEntry id="businessRolesOutput1">
+          <text>"DEPT_MANAGER"</text>
+        </outputEntry>
+        <outputEntry id="businessSignTypeOutput1">
+          <text>"SINGLE"</text>
+        </outputEntry>
+      </rule>
+
+      <!-- 规则2: >5天 - 部门经理→总经理串签 -->
+      <rule id="businessRule2">
+        <inputEntry id="businessInput2">
+          <text>&gt; 5</text>
+        </inputEntry>
+        <outputEntry id="businessRolesOutput2">
+          <text>"DEPT_MANAGER,GM"</text>
+        </outputEntry>
+        <outputEntry id="businessSignTypeOutput2">
+          <text>"SERIAL_AFTER_PARALLEL"</text>
+        </outputEntry>
+      </rule>
+
+    </decisionTable>
+  </decision>
+
+</definitions>

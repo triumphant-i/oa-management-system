@@ -72,7 +72,7 @@ const defaultModules = [
   { key: 'department', name: '组织架构', icon: 'cluster-o', color: '#fdcb6e', bgColor: '#fff8e8', visible: true },
   { key: 'apply', name: '发起申请', icon: 'edit', color: '#e17055', bgColor: '#ffe8f0', visible: true },
   { key: 'profile', name: '个人中心', icon: 'user-o', color: '#00b894', bgColor: '#e8f8ff', visible: true },
-  { key: 'system', name: '系统管理', icon: 'setting-o', color: '#e17055', bgColor: '#f0e8e8', visible: true },
+  
   { key: 'more', name: '更多', icon: 'apps-o', color: '#888', bgColor: '#f0f0f0', visible: true }
 ]
 

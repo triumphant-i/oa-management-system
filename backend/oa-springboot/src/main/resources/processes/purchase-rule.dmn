@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20151101/dmn.xsd"
+             id="purchaseRuleDecisions"
+             name="采购单审批规则"
+             namespace="http://camunda.org/schema/1.0/dmn"
+             exporter="Flowable"
+             exporterVersion="6.8.0">
+
+  <!-- 采购单审批规则决策表
+       规则：按采购金额分级审批（阈值略低于报销）
+       - ≤2000元: 本部门经理单签
+       - 2000～10000元: 本部门经理+财务专员会签
+       - >10000元: 本部门经理+财务经理会签后→总经理串签
+  -->
+  <decision id="purchaseRuleDecision" name="采购单规则决策表">
+    <decisionTable id="purchaseDecisionTable">
+      
+      <input id="purchaseAmountInput" label="采购金额">
+        <inputExpression id="purchaseAmountExpression" typeRef="number">
+          <text>amount</text>
+        </inputExpression>
+      </input>
+
+      <output id="purchaseRequiredRolesOutput" label="需要的审批角色" name="requiredRoles" typeRef="string"/>
+      <output id="purchaseSignTypeOutput" label="审批方式" name="signType" typeRef="string"/>
+
+      <!-- 规则1: ≤2000元 - 部门经理单签 -->
+      <rule id="purchaseRule1">
+        <inputEntry id="purchaseInput1">
+          <text>&lt;= 2000</text>
+        </inputEntry>
+        <outputEntry id="purchaseRolesOutput1">
+          <text>"DEPT_MANAGER"</text>
+        </outputEntry>
+        <outputEntry id="purchaseSignTypeOutput1">
+          <text>"SINGLE"</text>
+        </outputEntry>
+      </rule>
+
+      <!-- 规则2: 2000 ~ 10000元 - 部门经理+财务专员会签 -->
+      <rule id="purchaseRule2">
+        <inputEntry id="purchaseInput2">
+          <text>&gt; 2000 and &lt;= 10000</text>
+        </inputEntry>
+        <outputEntry id="purchaseRolesOutput2">
+          <text>"DEPT_MANAGER,FINANCE_STAFF"</text>
+        </outputEntry>
+        <outputEntry id="purchaseSignTypeOutput2">
+          <text>"PARALLEL"</text>
+        </outputEntry>
+      </rule>
+
+      <!-- 规则3: >10000元 - 部门经理+财务经理会签后→总经理串签 -->
+      <rule id="purchaseRule3">
+        <inputEntry id="purchaseInput3">
+          <text>&gt; 10000</text>
+        </inputEntry>
+        <outputEntry id="purchaseRolesOutput3">
+          <text>"DEPT_MANAGER,FINANCE_MANAGER,GM"</text>
+        </outputEntry>
+        <outputEntry id="purchaseSignTypeOutput3">
+          <text>"SERIAL_AFTER_PARALLEL"</text>
+        </outputEntry>
+      </rule>
+
+    </decisionTable>
+  </decision>
+
+</definitions>

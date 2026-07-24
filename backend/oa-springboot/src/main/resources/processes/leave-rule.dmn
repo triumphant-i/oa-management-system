@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/DMN/20151101/dmn.xsd"
+             id="leaveRuleDecisions"
+             name="请假单审批规则"
+             namespace="http://camunda.org/schema/1.0/dmn"
+             exporter="Flowable"
+             exporterVersion="6.8.0">
+
+  <!-- 请假单审批规则决策表
+       规则：按请假天数分级审批（财务无参与）
+       - ≤3天: 本部门经理单签
+       - >3天: 本部门经理→总经理串签
+  -->
+  <decision id="leaveRuleDecision" name="请假单规则决策表">
+    <decisionTable id="leaveDecisionTable">
+      
+      <input id="leaveDaysInput" label="请假天数">
+        <inputExpression id="leaveDaysExpression" typeRef="number">
+          <text>leaveDays</text>
+        </inputExpression>
+      </input>
+
+      <output id="leaveRequiredRolesOutput" label="需要的审批角色" name="requiredRoles" typeRef="string"/>
+      <output id="leaveSignTypeOutput" label="审批方式" name="signType" typeRef="string"/>
+
+      <!-- 规则1: ≤3天 - 部门经理单签 -->
+      <rule id="leaveRule1">
+        <inputEntry id="leaveInput1">
+          <text>&lt;= 3</text>
+        </inputEntry>
+        <outputEntry id="leaveRolesOutput1">
+          <text>"DEPT_MANAGER"</text>
+        </outputEntry>
+        <outputEntry id="leaveSignTypeOutput1">
+          <text>"SINGLE"</text>
+        </outputEntry>
+      </rule>
+
+      <!-- 规则2: >3天 - 部门经理→总经理串签 -->
+      <rule id="leaveRule2">
+        <inputEntry id="leaveInput2">
+          <text>&gt; 3</text>
+        </inputEntry>
+        <outputEntry id="leaveRolesOutput2">
+          <text>"DEPT_MANAGER,GM"</text>
+        </outputEntry>
+        <outputEntry id="leaveSignTypeOutput2">
+          <text>"SERIAL_AFTER_PARALLEL"</text>
+        </outputEntry>
+      </rule>
+
+    </decisionTable>
+  </decision>
+
+</definitions>

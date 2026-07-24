@@ -106,7 +106,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getPendingList, getMyApplications, getApprovalByStatus } from '@/api/approval'
+import { getPendingList, getMyApplications, getApprovalByStatus, getPendingCount } from '@/api/approval'
 import { showToast } from 'vant'
 
 const router = useRouter()
@@ -172,6 +172,19 @@ const allList = ref([])
 const loading = ref(false)
 const employeeId = ref(1)
 const role = ref('EMPLOYEE')
+const pendingCount = ref(0)
+
+// 角色映射：支持前后端各种角色名格式
+const roleMap = {
+  'admin': 'SYSTEM_ADMIN',
+  'manager': 'DEPARTMENT_MANAGER',
+  'processAdmin': 'PROCESS_ADMIN',
+  'employee': 'EMPLOYEE',
+  'SYSTEM_ADMIN': 'SYSTEM_ADMIN',
+  'DEPARTMENT_MANAGER': 'DEPARTMENT_MANAGER',
+  'PROCESS_ADMIN': 'PROCESS_ADMIN',
+  'EMPLOYEE': 'EMPLOYEE'
+}
 
 // =============================================
 // ===== 类型映射 =====
@@ -208,53 +221,79 @@ const getStatusClass = (status) => {
 const loadData = async () => {
   loading.value = true
   try {
-    // 并行请求所有数据
-    const [pendingRes, myRes, approvedRes, rejectedRes] = await Promise.all([
-      getPendingList(employeeId.value, role.value),
-      getMyApplications(employeeId.value),
-      getApprovalByStatus('已通过'),
-      getApprovalByStatus('已拒绝')
-    ])
+    // 使用角色映射
+    const backendRole = roleMap[role.value] || role.value
     
+    // 并行请求所有数据
+    const [pendingRes, myRes, approvedRes, rejectedRes, countRes] = await Promise.all([
+      getPendingList(employeeId.value, backendRole).catch(() => ({ code: -1, data: [] })),
+      getMyApplications(employeeId.value).catch(() => ({ code: -1, data: [] })),
+      getApprovalByStatus('已通过').catch(() => ({ code: -1, data: [] })),
+      getApprovalByStatus('已拒绝').catch(() => ({ code: -1, data: [] })),
+      getPendingCount(employeeId.value, backendRole).catch(() => ({ code: -1, data: 0 }))
+    ])
+
     // 合并数据（使用 Map 去重）
     const map = new Map()
-    
-    if (pendingRes.code === 0) {
-      ;(pendingRes.data || []).forEach(item => {
-        map.set(item.id, item)
-      })
+
+    // 优先使用 getPendingList 的数据（后端已改为 DB 优先 + Flowable 补充）
+    if (pendingRes.code === 0 && pendingRes.data && pendingRes.data.length > 0) {
+      pendingRes.data.forEach(item => map.set(item.id, item))
     }
-    
+
+    // 从 myRes 补充数据
     if (myRes.code === 0) {
-      ;(myRes.data || []).forEach(item => {
+      (myRes.data || []).forEach(item => {
         if (!map.has(item.id)) {
           map.set(item.id, item)
         }
       })
     }
-    
+
+    // 从按状态查询补充
     if (approvedRes.code === 0) {
-      ;(approvedRes.data || []).forEach(item => {
+      (approvedRes.data || []).forEach(item => {
         if (!map.has(item.id)) {
           map.set(item.id, item)
         }
       })
     }
-    
+
     if (rejectedRes.code === 0) {
-      ;(rejectedRes.data || []).forEach(item => {
+      (rejectedRes.data || []).forEach(item => {
         if (!map.has(item.id)) {
           map.set(item.id, item)
         }
       })
     }
-    
-    allList.value = Array.from(map.values()).sort((a, b) => 
+
+    // 如果仍未拉取到任何数据，再拉取一次 findByStatus
+    if (map.size === 0) {
+      console.log('主请求未返回数据，尝试 findByStatus 兜底')
+      try {
+        const pendingByStatus = await getApprovalByStatus('待审批')
+        if (pendingByStatus.code === 0) {
+          (pendingByStatus.data || []).forEach(item => map.set(item.id, item))
+        }
+      } catch (e) {
+        console.warn('findByStatus 兜底也失败', e)
+      }
+    }
+
+    allList.value = Array.from(map.values()).sort((a, b) =>
       new Date(b.createTime) - new Date(a.createTime)
     )
-    
-    console.log('✅ 审批数据加载成功:', allList.value.length, '条')
-    
+
+    // 更新待审批数量：以实际列表为准
+    const actualPendingCount = allList.value.filter(item => item.status === '待审批' || !item.status).length
+    if (countRes.code === 0 && actualPendingCount === 0) {
+      pendingCount.value = countRes.data
+    }
+    // pendingCount 不再单独使用，getCount() 改为基于 allList
+
+    console.log('✅ 审批数据加载成功:', allList.value.length, '条, 实际待审批:', actualPendingCount, 'Flowable待审批:', (countRes.code === 0 ? countRes.data : 'N/A'))
+    console.log('list items:', allList.value.map(i => ({ id: i.id, status: i.status, title: i.title })))
+
   } catch (error) {
     console.error('❌ 加载审批数据失败:', error)
     showToast('加载失败，请稍后重试')
@@ -268,7 +307,14 @@ const loadData = async () => {
 // ===== 统计数量 =====
 // =============================================
 const getCount = (status) => {
-  return allList.value.filter(item => item.status === status).length
+  // 基于实际列表数据的统计，不再依赖 Flowable 的 pendingCount
+  return allList.value.filter(item => {
+    // 对待审批的状态做宽松匹配
+    if (status === '待审批') {
+      return item.status === '待审批' || !item.status
+    }
+    return item.status === status
+  }).length
 }
 
 // =============================================

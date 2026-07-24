@@ -1,0 +1,1 @@
+ALTER TABLE t_approval ADD COLUMN applicant_department_id INT DEFAULT NULL COMMENT '申请人部门ID' AFTER applicant_name;

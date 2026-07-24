@@ -90,4 +90,60 @@ public class ValidatorUtil {
             throw new IllegalArgumentException(paramName + "格式错误");
         }
     }
+
+    /**
+     * 验证字符串最大长度
+     * @param str 字符串
+     * @param maxLength 最大长度
+     * @param paramName 参数名（用于错误提示）
+     * @throws IllegalArgumentException 如果超过最大长度
+     */
+    public static void maxLength(String str, int maxLength, String paramName) {
+        if (str != null && str.length() > maxLength) {
+            throw new IllegalArgumentException(paramName + "长度不能超过" + maxLength + "个字符");
+        }
+    }
+
+    /**
+     * 验证字符串最小长度
+     * @param str 字符串
+     * @param minLength 最小长度
+     * @param paramName 参数名（用于错误提示）
+     * @throws IllegalArgumentException 如果小于最小长度
+     */
+    public static void minLength(String str, int minLength, String paramName) {
+        if (str != null && str.length() < minLength) {
+            throw new IllegalArgumentException(paramName + "长度不能少于" + minLength + "个字符");
+        }
+    }
+
+    /**
+     * 验证手机号格式
+     * @param phone 手机号
+     * @throws IllegalArgumentException 如果格式不正确
+     */
+    public static void validatePhone(String phone) {
+        if (phone == null || phone.trim().isEmpty()) {
+            throw new IllegalArgumentException("手机号不能为空");
+        }
+        // 验证手机号格式（中国大陆手机号）
+        if (!phone.trim().matches("^1[3-9]\\d{9}$")) {
+            throw new IllegalArgumentException("手机号格式不正确");
+        }
+    }
+
+    /**
+     * 验证邮箱格式
+     * @param email 邮箱
+     * @throws IllegalArgumentException 如果格式不正确
+     */
+    public static void validateEmail(String email) {
+        if (email == null || email.trim().isEmpty()) {
+            throw new IllegalArgumentException("邮箱不能为空");
+        }
+        // 验证邮箱格式
+        if (!email.trim().matches("^[a-zA-Z0-9_.-]+@[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*\\.[a-zA-Z]{2,}$")) {
+            throw new IllegalArgumentException("邮箱格式不正确");
+        }
+    }
 }

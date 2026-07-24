@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class AnnouncementReadStatusServiceImpl extends ServiceImpl<AnnouncementReadStatusMapper, AnnouncementReadStatus> implements AnnouncementReadStatusService {
@@ -48,19 +49,22 @@ public class AnnouncementReadStatusServiceImpl extends ServiceImpl<AnnouncementR
 
     @Override
     public Integer countUnread(Integer employeeId) {
+        // 统计已发布公告总数
         QueryWrapper<Announcement> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("status", "已发布");
-        Integer totalCount = announcementService.count(queryWrapper);
-        if (totalCount == null) {
-            totalCount = 0;
+        List<Announcement> publishedList = announcementService.list(queryWrapper);
+        int totalCount = publishedList != null ? publishedList.size() : 0;
+
+        // 统计该员工已读的公告数（只统计已发布公告）
+        int readCount = 0;
+        for (Announcement announcement : publishedList) {
+            Integer status = baseMapper.getReadStatus(announcement.getId(), employeeId);
+            if (status != null && status == 1) {
+                readCount++;
+            }
         }
-        
-        Integer readCount = baseMapper.countReadByEmployeeId(employeeId);
-        if (readCount == null) {
-            readCount = 0;
-        }
-        
-        return totalCount - readCount;
+
+        return Math.max(0, totalCount - readCount);
     }
 
     @Override

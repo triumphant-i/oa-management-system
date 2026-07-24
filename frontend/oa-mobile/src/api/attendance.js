@@ -64,3 +64,10 @@ export function getCorrectionList(employeeId) {
     method: 'get'
   })
 }
+
+export function getEmployeeShift(employeeId) {
+  return request({
+    url: `/attendance/getEmployeeShift/${employeeId}`,
+    method: 'get'
+  })
+}

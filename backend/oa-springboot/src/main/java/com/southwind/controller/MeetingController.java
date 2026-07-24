@@ -6,6 +6,7 @@ import com.southwind.entity.Employee;
 import com.southwind.entity.Meeting;
 import com.southwind.entity.MeetingRoom;
 import com.southwind.entity.Message;
+import com.southwind.exception.MeetingConflictException;
 import com.southwind.service.EmployeeService;
 import com.southwind.service.MeetingRoomService;
 import com.southwind.service.MeetingService;
@@ -75,8 +76,15 @@ public class MeetingController {
         meeting.setStatus("已预约");
         meeting.setRoomName(room.getName());
         meeting.setCreateTime(LocalDateTime.now());
-        boolean save = meetingService.save(meeting);
-        if (!save) return ResultVOUtil.fail("预约失败");
+        
+        try {
+            boolean save = meetingService.save(meeting);
+            if (!save) return ResultVOUtil.fail("预约失败");
+        } catch (MeetingConflictException e) {
+            return ResultVOUtil.fail("该时间段会议室已被预约");
+        } catch (IllegalArgumentException e) {
+            return ResultVOUtil.fail(e.getMessage());
+        }
 
         // 发送会议通知给所有参会人
         String participantIds = meeting.getParticipantIds();
@@ -198,11 +206,59 @@ public class MeetingController {
         if (meeting == null) {
             return ResultVOUtil.fail("会议不存在");
         }
+        
+        Integer version = meeting.getVersion();
         meeting.setStatus("已取消");
         meeting.setUpdateTime(LocalDateTime.now());
 
         boolean update = meetingService.updateById(meeting);
-        if (!update) return ResultVOUtil.fail("取消失败");
+        if (!update) {
+            Meeting dbMeeting = meetingService.getById(id);
+            if (dbMeeting != null && version != null && !version.equals(dbMeeting.getVersion())) {
+                return ResultVOUtil.fail("数据已被其他用户修改，请刷新后重试");
+            }
+            return ResultVOUtil.fail("取消失败");
+        }
+        
+        // 发送取消通知给所有参会人
+        String participantIds = meeting.getParticipantIds();
+        if (participantIds != null && !participantIds.isEmpty()) {
+            String[] ids = participantIds.split(",");
+            for (String idStr : ids) {
+                try {
+                    Integer receiverId = Integer.parseInt(idStr.trim());
+                    Employee emp = employeeService.getById(receiverId);
+                    String receiverName = emp != null ? emp.getName() : "参会人";
+                    Message message = new Message();
+                    message.setSenderId(meeting.getOrganizerId());
+                    message.setSenderName(meeting.getOrganizerName());
+                    message.setReceiverId(receiverId);
+                    message.setReceiverName(receiverName);
+                    message.setTitle("会议取消通知");
+                    message.setContent(String.format("您参加的会议【%s】已被取消，请留意最新安排。", meeting.getTitle()));
+                    message.setMsgType("MEETING");
+                    message.setIsRead(0);
+                    message.setIsTop(0);
+                    messageService.sendMessage(message);
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+            }
+        }
+        
+        // 通知组织者
+        Message organizerMsg = new Message();
+        organizerMsg.setSenderId(meeting.getOrganizerId());
+        organizerMsg.setSenderName(meeting.getOrganizerName());
+        organizerMsg.setReceiverId(meeting.getOrganizerId());
+        organizerMsg.setReceiverName(meeting.getOrganizerName());
+        organizerMsg.setTitle("会议已取消");
+        organizerMsg.setContent("会议【" + meeting.getTitle() + "】已成功取消。");
+        organizerMsg.setMsgType("MEETING");
+        organizerMsg.setIsRead(0);
+        organizerMsg.setIsTop(0);
+        messageService.sendMessage(organizerMsg);
+        
         return ResultVOUtil.success("取消成功");
     }
 
@@ -230,6 +286,11 @@ public class MeetingController {
             return ResultVOUtil.fail("会议不存在");
         }
         
+        // 检查乐观锁版本
+        if (meeting.getVersion() != null && !meeting.getVersion().equals(existing.getVersion())) {
+            return ResultVOUtil.fail("数据已被其他用户修改，请刷新后重试");
+        }
+        
         // 记录变更内容
         StringBuilder changeDetails = new StringBuilder();
         if (meeting.getTitle() != null && !meeting.getTitle().equals(existing.getTitle())) {
@@ -250,6 +311,30 @@ public class MeetingController {
             changeDetails.append("参会人员有调整；");
         }
         
+        // 检测被移除的参会人（在旧列表但不在新列表中）
+        List<Integer> removedParticipantIds = new java.util.ArrayList<>();
+        if (meeting.getParticipantIds() != null && !meeting.getParticipantIds().equals(existing.getParticipantIds())) {
+            java.util.Set<Integer> oldIds = new java.util.HashSet<>();
+            java.util.Set<Integer> newIds = new java.util.HashSet<>();
+            
+            if (existing.getParticipantIds() != null && !existing.getParticipantIds().isEmpty()) {
+                for (String id : existing.getParticipantIds().split(",")) {
+                    try { oldIds.add(Integer.parseInt(id.trim())); } catch (Exception e) {}
+                }
+            }
+            if (!meeting.getParticipantIds().isEmpty()) {
+                for (String id : meeting.getParticipantIds().split(",")) {
+                    try { newIds.add(Integer.parseInt(id.trim())); } catch (Exception e) {}
+                }
+            }
+            
+            for (Integer oldId : oldIds) {
+                if (!newIds.contains(oldId)) {
+                    removedParticipantIds.add(oldId);
+                }
+            }
+        }
+
         // 合并字段：前端提供的字段覆盖原记录
         if (meeting.getTitle() != null) existing.setTitle(meeting.getTitle());
         if (meeting.getStartTime() != null) existing.setStartTime(meeting.getStartTime());
@@ -261,10 +346,34 @@ public class MeetingController {
         existing.setUpdateTime(LocalDateTime.now());
         
         boolean update = meetingService.updateById(existing);
-        if (!update) return ResultVOUtil.fail("更新失败");
+        if (!update) {
+            return ResultVOUtil.fail("数据已被其他用户修改，请刷新后重试");
+        }
         
         // 如果有变更，发送消息通知所有参会人
         if (changeDetails.length() > 0) {
+            // 通知被移除的参会人：会议已取消，无需参加
+            for (Integer removedId : removedParticipantIds) {
+                try {
+                    Employee emp = employeeService.getById(removedId);
+                    String receiverName = emp != null ? emp.getName() : "参会人";
+                    Message cancelMsg = new Message();
+                    cancelMsg.setSenderId(existing.getOrganizerId());
+                    cancelMsg.setSenderName(existing.getOrganizerName());
+                    cancelMsg.setReceiverId(removedId);
+                    cancelMsg.setReceiverName(receiverName);
+                    cancelMsg.setTitle("会议取消通知");
+                    cancelMsg.setContent(String.format("您原定参加的会议【%s】已取消您的参会资格，无需参加。", existing.getTitle()));
+                    cancelMsg.setMsgType("MEETING");
+                    cancelMsg.setIsRead(0);
+                    cancelMsg.setIsTop(0);
+                    messageService.sendMessage(cancelMsg);
+                } catch (Exception e) {
+                    continue;
+                }
+            }
+
+            // 通知当前参会人会议信息变更
             String participantIds = existing.getParticipantIds();
             if (participantIds != null && !participantIds.isEmpty()) {
                 String[] ids = participantIds.split(",");
@@ -332,10 +441,17 @@ public class MeetingController {
             return ResultVOUtil.fail("当前会议状态不允许开始");
         }
         
+        Integer version = meeting.getVersion();
         meeting.setStatus("进行中");
         meeting.setUpdateTime(LocalDateTime.now());
         boolean update = meetingService.updateById(meeting);
-        if (!update) return ResultVOUtil.fail("操作失败");
+        if (!update) {
+            Meeting dbMeeting = meetingService.getById(id);
+            if (dbMeeting != null && version != null && !version.equals(dbMeeting.getVersion())) {
+                return ResultVOUtil.fail("数据已被其他用户修改，请刷新后重试");
+            }
+            return ResultVOUtil.fail("操作失败");
+        }
         
         return ResultVOUtil.success("会议已开始");
     }
@@ -353,10 +469,17 @@ public class MeetingController {
             return ResultVOUtil.fail("当前会议状态不允许结束");
         }
         
+        Integer version = meeting.getVersion();
         meeting.setStatus("已结束");
         meeting.setUpdateTime(LocalDateTime.now());
         boolean update = meetingService.updateById(meeting);
-        if (!update) return ResultVOUtil.fail("操作失败");
+        if (!update) {
+            Meeting dbMeeting = meetingService.getById(id);
+            if (dbMeeting != null && version != null && !version.equals(dbMeeting.getVersion())) {
+                return ResultVOUtil.fail("数据已被其他用户修改，请刷新后重试");
+            }
+            return ResultVOUtil.fail("操作失败");
+        }
         
         return ResultVOUtil.success("会议已结束");
     }
@@ -393,10 +516,17 @@ public class MeetingController {
             }
         }
         
+        Integer version = meeting.getVersion();
         meeting.setEndTime(newEndTime);
         meeting.setUpdateTime(LocalDateTime.now());
         boolean update = meetingService.updateById(meeting);
-        if (!update) return ResultVOUtil.fail("操作失败");
+        if (!update) {
+            Meeting dbMeeting = meetingService.getById(id);
+            if (dbMeeting != null && version != null && !version.equals(dbMeeting.getVersion())) {
+                return ResultVOUtil.fail("数据已被其他用户修改，请刷新后重试");
+            }
+            return ResultVOUtil.fail("操作失败");
+        }
         
         return ResultVOUtil.success("会议已延长" + minutes + "分钟");
     }

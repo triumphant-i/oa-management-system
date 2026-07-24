@@ -106,6 +106,14 @@
         <span class="func-text">发起申请</span>
       </div>
 
+      <!-- 我的申请 - 所有角色可见 -->
+      <div class="func-item" v-if="isModuleVisible('my-applications')" @click="goPage('my-applications')">
+        <div class="icon-wrap" style="background: #e8f8ff;">
+          <van-icon name="todo-list-o" size="24" color="#0984e3" />
+        </div>
+        <span class="func-text">我的申请</span>
+      </div>
+
       <!-- 个人中心 - 所有角色可见 -->
       <div class="func-item" v-if="isModuleVisible('profile')" @click="goPage('profile')">
         <div class="icon-wrap" style="background: #e8f8ff;">
@@ -114,13 +122,6 @@
         <span class="func-text">个人中心</span>
       </div>
 
-      <!-- 系统管理 - 仅管理员可见 -->
-      <div class="func-item" v-if="isModuleVisible('system') && role === 'admin'" @click="goPage('system')">
-        <div class="icon-wrap" style="background: #f0e8e8;">
-          <van-icon name="setting-o" size="24" color="#e17055" />
-        </div>
-        <span class="func-text">系统管理</span>
-      </div>
 
     </div>
 
@@ -182,25 +183,48 @@ const unreadCount = ref(0)
 // =============================================
 const fetchStats = async () => {
   try {
-    const [pendingRes, announcementRes, messageRes, meetingsRes] = await Promise.all([
-      getPendingApprovalCount(employeeId.value, role.value.toUpperCase()),
+    // 角色映射：支持前后端各种角色名格式
+    const roleMap = {
+      'admin': 'SYSTEM_ADMIN',
+      'manager': 'DEPARTMENT_MANAGER',
+      'processAdmin': 'PROCESS_ADMIN',
+      'employee': 'EMPLOYEE',
+      'SYSTEM_ADMIN': 'SYSTEM_ADMIN',
+      'DEPARTMENT_MANAGER': 'DEPARTMENT_MANAGER',
+      'PROCESS_ADMIN': 'PROCESS_ADMIN',
+      'EMPLOYEE': 'EMPLOYEE'
+    }
+    const backendRole = roleMap[role.value] || 'EMPLOYEE'
+    
+    // 同时获取 Flowable 的待办计数和 DB 中待审批记录的数量
+    const [pendingCountRes, announcementRes, messageRes, meetingsRes] = await Promise.all([
+      getPendingApprovalCount(employeeId.value, backendRole),
       getAnnouncementUnreadCount(),
       getMessageUnreadCount(),
       getTodayMeetings(employeeId.value)
     ])
-    
-    if (pendingRes.code === 0 && pendingRes.data !== undefined) {
-      stats.value.pending = pendingRes.data
+
+    // 首页 badge 显示 DB 中的实际待审批数（未登录时忽略）
+    if (pendingCountRes.code === 0) {
+      stats.value.pending = pendingCountRes.data
+    } else {
+      // Flowable 不可用时从 URL 拉取一次 list 兜底
+      try {
+        const pendingRes = await import('@/api/approval').then(m => m.getApprovalByStatus('待审批'))
+        if (pendingRes.code === 0) {
+          stats.value.pending = (pendingRes.data || []).length
+        }
+      } catch (e) { stats.value.pending = 0 }
     }
-    
+
     if (announcementRes.code === 0 && announcementRes.data) {
       stats.value.unread = announcementRes.data.count || 0
     }
-    
+
     if (messageRes.code === 0 && messageRes.data) {
       unreadCount.value = messageRes.data.count || 0
     }
-    
+
     if (meetingsRes.code === 0 && meetingsRes.data) {
       const today = new Date().toDateString()
       const todayMeetings = meetingsRes.data.filter(m => {
@@ -209,7 +233,7 @@ const fetchStats = async () => {
       })
       stats.value.todayMeeting = todayMeetings.length
     }
-    
+
     console.log('✅ 首页统计数据更新完成:', stats.value)
     console.log('✅ 消息未读数量:', unreadCount.value)
   } catch (error) {
@@ -263,13 +287,25 @@ const handleAvatarError = (event) => {
 // ===== 📥 加载用户信息 =====
 // =============================================
 const loadUserInfo = () => {
+  // 优先从 userInfo 读取，兼容旧数据
+  let storedUserInfo = null
+  try {
+    const userInfoStr = localStorage.getItem('userInfo')
+    if (userInfoStr) {
+      storedUserInfo = JSON.parse(userInfoStr)
+    }
+  } catch (e) {
+    console.warn('解析 userInfo 失败:', e)
+  }
+  
   // 从 localStorage 读取基本信息
-  const storedRole = localStorage.getItem('role')
-  const storedUsername = localStorage.getItem('username')
-  const storedName = localStorage.getItem('name')
+  const storedRole = storedUserInfo?.role || localStorage.getItem('role')
+  const storedUsername = storedUserInfo?.username || localStorage.getItem('username')
+  const storedName = storedUserInfo?.name || localStorage.getItem('name')
   const storedRoleName = localStorage.getItem('roleName')
-  const storedEmployeeId = localStorage.getItem('employeeId')
-  const storedAvatar = localStorage.getItem('avatar')
+  const storedEmployeeId = storedUserInfo?.id?.toString() || localStorage.getItem('employeeId')
+  const storedAvatar = storedUserInfo?.avatar || localStorage.getItem('avatar')
+  const storedDeptName = storedUserInfo?.departmentName || localStorage.getItem('department')
   
   // 角色映射（后端返回的是大写，前端用小写判断）
   const roleMap = {
@@ -294,9 +330,8 @@ const loadUserInfo = () => {
   // 姓名
   userName.value = storedName || storedUsername || '用户'
   
-  // 部门（从 localStorage 读取，或使用角色名）
-  const storedDept = localStorage.getItem('department')
-  department.value = storedDept || roleName.value
+  // 部门
+  department.value = storedDeptName || roleName.value
   
   // ===== 🔑 头像（存储相对路径，显示时拼接） =====
   userAvatar.value = storedAvatar || ''
@@ -439,10 +474,12 @@ const handleLogout = () => {
       localStorage.removeItem('username')
       localStorage.removeItem('name')
       localStorage.removeItem('employeeId')
+      localStorage.removeItem('departmentId')
       localStorage.removeItem('role')
       localStorage.removeItem('roleName')
       localStorage.removeItem('department')
       localStorage.removeItem('avatar')
+      localStorage.removeItem('userInfo')
       showToast('已退出登录')
       router.replace('/login')
     }

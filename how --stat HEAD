@@ -1,0 +1,54 @@
+[1mdiff --git a/backend/oa-springboot/pom.xml b/backend/oa-springboot/pom.xml[m
+[1mindex fc5cd96..ef7368f 100644[m
+[1m--- a/backend/oa-springboot/pom.xml[m
+[1m+++ b/backend/oa-springboot/pom.xml[m
+[36m@@ -27,7 +27,7 @@[m
+         <url/>[m
+     </scm>[m
+     <properties>[m
+[31m-        <java.version>17</java.version>[m
+[32m+[m[32m        <java.version>21</java.version>[m
+         <spring-cloud-alibaba.version>2021.0.5.0</spring-cloud-alibaba.version>[m
+         <nacos-client.version>1.4.3</nacos-client.version>[m
+     </properties>[m
+[36m@@ -65,7 +65,7 @@[m
+         <dependency>[m
+             <groupId>org.projectlombok</groupId>[m
+             <artifactId>lombok</artifactId>[m
+[31m-            <version>1.18.30</version>[m
+[32m+[m[32m            <version>1.18.32</version>[m
+             <scope>provided</scope>[m
+         </dependency>[m
+         <dependency>[m
+[36m@@ -152,6 +152,13 @@[m
+             <artifactId>poi-ooxml</artifactId>[m
+             <version>4.1.2</version>[m
+         </dependency>[m
+[32m+[m
+[32m+[m[32m        <!-- ========== Flowable 工作流引擎 ========== -->[m
+[32m+[m[32m        <dependency>[m
+[32m+[m[32m            <groupId>org.flowable</groupId>[m
+[32m+[m[32m            <artifactId>flowable-spring-boot-starter</artifactId>[m
+[32m+[m[32m            <version>6.8.0</version>[m
+[32m+[m[32m        </dependency>[m
+     </dependencies>[m
+ [m
+     <build>[m
+[36m@@ -161,14 +168,14 @@[m
+                 <artifactId>maven-compiler-plugin</artifactId>[m
+                 <version>3.10.1</version>[m
+                 <configuration>[m
+[31m-                    <source>17</source>[m
+[31m-                    <target>17</target>[m
+[32m+[m[32m                    <source>21</source>[m
+[32m+[m[32m                    <target>21</target>[m
+                     <encoding>UTF-8</encoding>[m
+                     <annotationProcessorPaths>[m
+                         <path>[m
+                             <groupId>org.projectlombok</groupId>[m
+                             <artifactId>lombok</artifactId>[m
+[31m-                            <version>1.18.30</version>[m
+[32m+[m[32m                            <version>1.18.32</version>[m
+                         </path>[m
+                     </annotationProcessorPaths>[m
+                 </configuration>[m

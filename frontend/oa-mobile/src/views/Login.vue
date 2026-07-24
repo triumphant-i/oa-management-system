@@ -128,7 +128,6 @@ const router = useRouter()
 // ===== 账号密码映射（根据数据库实际数据） =====
 const users = {
   admin: { username: 'admin', password: '123456', role: 'admin', roleName: '系统管理员' },
-  // 数据库中的部门主管账号是 zhangsan 和 lisi
   manager: { username: 'zhangsan', password: '123456', role: 'manager', roleName: '部门主管' },
   employee: { username: 'emp001', password: '123456', role: 'employee', roleName: '普通员工' }
 }
@@ -210,7 +209,7 @@ const handleLogin = async () => {
     }
   } catch (error) {
     console.error('登录失败:', error)
-    showToast('登录失败，请稍后重试')
+    // 不再重复显示错误提示，响应拦截器已显示后端返回的错误信息（如"员工账号不存在，还剩3次机会"）
   } finally {
     loading.value = false
   }

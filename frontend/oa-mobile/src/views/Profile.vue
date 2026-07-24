@@ -31,6 +31,10 @@
           <span class="info-value">{{ userInfo.name }}</span>
         </div>
         <div class="info-item">
+          <span class="info-label">账号名</span>
+          <span class="info-value">{{ userInfo.username }}</span>
+        </div>
+        <div class="info-item">
           <span class="info-label">性别</span>
           <span class="info-value">{{ userInfo.gender }}</span>
         </div>
@@ -49,6 +53,10 @@
         <div class="info-item">
           <span class="info-label">入职日期</span>
           <span class="info-value">{{ userInfo.joinDate }}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">班次</span>
+          <span class="info-value">{{ userInfo.shiftName ? userInfo.shiftName + ' (' + userInfo.workStart + '-' + userInfo.workEnd + ')' : '未分配班次' }}</span>
         </div>
         <div class="info-item">
           <span class="info-label">联系电话</span>
@@ -75,6 +83,10 @@
         <div class="info-item">
           <span class="info-label">姓名</span>
           <van-field v-model="editData.name" placeholder="请输入姓名" class="edit-field" />
+        </div>
+        <div class="info-item">
+          <span class="info-label">账号名</span>
+          <van-field v-model="editData.username" placeholder="请输入账号名" class="edit-field" />
         </div>
         <div class="info-item">
           <span class="info-label">性别</span>
@@ -212,6 +224,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getMyInfo, updateProfile, updatePassword } from '@/api/profile'
+import { getEmployeeShift } from '@/api/attendance'
 import request from '@/utils/request'
 
 const router = useRouter()
@@ -219,6 +232,7 @@ const router = useRouter()
 const userInfo = reactive({
   id: null,
   name: '',
+  username: '',
   gender: '',
   employeeId: '',
   department: '',
@@ -228,14 +242,18 @@ const userInfo = reactive({
   phone: '',
   email: '',
   avatar: '',
-  role: ''
+  role: '',
+  shiftId: null,
+  shiftName: '',
+  workStart: '',
+  workEnd: ''
 })
 
 const isEditing = ref(false)
 const saving = ref(false)
-
 const editData = reactive({
   name: '',
+  username: '',
   gender: '',
   position: '',
   phone: '',
@@ -277,6 +295,7 @@ const fetchMyInfo = async () => {
       const data = res.data
       userInfo.id = data.id
       userInfo.name = data.name
+      userInfo.username = data.username || ''
       userInfo.gender = data.gender || ''
       userInfo.employeeId = data.employeeId || ''
       userInfo.department = data.department || ''
@@ -287,14 +306,35 @@ const fetchMyInfo = async () => {
       userInfo.email = data.email || ''
       userInfo.avatar = data.avatar || ''
       userInfo.role = data.role || ''
+      userInfo.shiftId = data.shiftId
+      userInfo.shiftName = data.shiftName || ''
+      userInfo.workStart = data.workStart || ''
+      userInfo.workEnd = data.workEnd || ''
     }
   } catch (error) {
     console.error('获取个人信息失败', error)
   }
 }
 
+const fetchEmployeeShift = async (employeeId) => {
+  try {
+    const res = await getEmployeeShift(employeeId)
+    if (res.code === 0 && res.data) {
+      employeeShift.value = res.data
+    }
+  } catch (error) {
+    console.error('获取员工班次失败', error)
+  }
+}
+
+const formatShiftTime = (timeStr) => {
+  if (!timeStr) return ''
+  return timeStr.substring(0, 5)
+}
+
 const startEdit = () => {
   editData.name = userInfo.name
+  editData.username = userInfo.username
   editData.gender = userInfo.gender
   editData.position = userInfo.position
   editData.phone = userInfo.phone
@@ -312,6 +352,7 @@ const onConfirmGender = ({ selectedValues }) => {
 }
 
 const saveEdit = async () => {
+  // 前端验证
   if (!editData.name.trim()) {
     showToast('请输入姓名')
     return
@@ -324,11 +365,26 @@ const saveEdit = async () => {
     showToast('请输入邮箱')
     return
   }
+  
+  // 手机格式验证
+  const phoneRegex = /^1[3-9]\d{9}$/
+  if (!phoneRegex.test(editData.phone)) {
+    showToast('请输入正确的11位手机号')
+    return
+  }
+  
+  // 邮箱格式验证
+  const emailRegex = /^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]{0,61}[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/
+  if (!emailRegex.test(editData.email)) {
+    showToast('请输入正确的邮箱格式')
+    return
+  }
 
   saving.value = true
   try {
     const res = await updateProfile({
       name: editData.name,
+      username: editData.username,
       gender: editData.gender,
       phone: editData.phone,
       email: editData.email
@@ -336,15 +392,15 @@ const saveEdit = async () => {
     if (res.code === 0) {
       showToast('✅ 个人信息已更新！')
       userInfo.name = editData.name
+      userInfo.username = editData.username
       userInfo.gender = editData.gender
       userInfo.phone = editData.phone
       userInfo.email = editData.email
       isEditing.value = false
-    } else {
-      showToast(res.message || '更新失败')
     }
   } catch (error) {
-    showToast('更新失败，请稍后重试')
+    // 响应拦截器已处理业务错误提示，此处仅处理网络等未知错误
+    console.error('更新失败', error)
   } finally {
     saving.value = false
   }

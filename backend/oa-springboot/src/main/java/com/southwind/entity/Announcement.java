@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import lombok.Data;
@@ -84,6 +85,13 @@ public class Announcement implements Serializable {
    * 更新时间
    */
   private LocalDateTime updateTime;
+
+  /**
+   * 版本号（乐观锁）
+   */
+  @Version
+  @TableField("version")
+  private Integer version;
 
   /**
    * 是否已读（非数据库字段，用于前端展示）
@@ -187,6 +195,14 @@ public class Announcement implements Serializable {
 
   public void setIsRead(Integer isRead) {
     this.isRead = isRead;
+  }
+
+  public Integer getVersion() {
+    return version;
+  }
+
+  public void setVersion(Integer version) {
+    this.version = version;
   }
 
 }

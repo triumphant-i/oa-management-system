@@ -185,6 +185,12 @@ public class Approval implements Serializable {
   private String approveReason;
 
   /**
+   * 关联的Flowable流程实例ID
+   */
+  @TableField("process_instance_id")
+  private String processInstanceId;
+
+  /**
    * 创建时间
    */
   private LocalDateTime createTime;
@@ -307,6 +313,10 @@ public class Approval implements Serializable {
     return approveReason;
   }
 
+  public String getProcessInstanceId() {
+    return processInstanceId;
+  }
+
   // 手动添加 setter 方法
   public void setId(Integer id) {
     this.id = id;
@@ -418,6 +428,10 @@ public class Approval implements Serializable {
 
   public void setApproveReason(String approveReason) {
     this.approveReason = approveReason;
+  }
+
+  public void setProcessInstanceId(String processInstanceId) {
+    this.processInstanceId = processInstanceId;
   }
 
   public void setUpdateTime(LocalDateTime updateTime) {

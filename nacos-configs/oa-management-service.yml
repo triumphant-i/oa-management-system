@@ -1,0 +1,44 @@
+
+server:
+  port: 8080
+
+spring:
+  # ========== MySQL 数据库配置 ==========
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/oa_system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: '20050410Ky6!'
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    map-underscore-to-camel-case: true
+  mapper-locations: com/southwind/mapper/xml/*.xml
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# ========== Flowable 配置，只启用流程引擎 ==========
+flowable:
+  app:
+    enabled: false
+  idm:
+    enabled: false
+  form:
+    enabled: false
+  cmmn:
+    enabled: false
+  dmn:
+    enabled: false
+  content:
+    enabled: false
+  event-registry:
+    enabled: false
+  process:
+    enabled: true
+  database-schema-update: true
+  history-level: full
+  async-executor-activate: true

@@ -63,6 +63,13 @@ public class PermissionInterceptor implements HandlerInterceptor {
         
         // 如果方法和类都没有权限注解，直接放行
         if (methodAnnotation == null && classAnnotation == null) {
+            // 即使没有权限注解，如果有有效的token，也设置用户上下文
+            if (token != null) {
+                UserContext.UserInfo userInfo = jwtTokenUtil.parseToken(token);
+                if (userInfo != null) {
+                    UserContext.setCurrentUser(userInfo);
+                }
+            }
             return true;
         }
         
@@ -89,17 +96,24 @@ public class PermissionInterceptor implements HandlerInterceptor {
     }
 
     /**
-     * 从HTTP Header中提取Token
-     * 格式：Authorization: Bearer <token>
+     * 从HTTP Header或URL参数中提取Token
+     * 格式1：Authorization: Bearer <token>
+     * 格式2：URL参数 ?token=<token>
      */
     private String extractToken(HttpServletRequest request) {
+        // 优先从Header获取
         String header = request.getHeader(SystemConstants.TOKEN_HEADER);
-        if (header == null || header.isEmpty()) {
-            return null;
+        if (header != null && !header.isEmpty()) {
+            if (header.startsWith(SystemConstants.TOKEN_PREFIX)) {
+                return header.substring(SystemConstants.TOKEN_PREFIX.length());
+            }
+            return header;
         }
         
-        if (header.startsWith(SystemConstants.TOKEN_PREFIX)) {
-            return header.substring(SystemConstants.TOKEN_PREFIX.length());
+        // 其次从URL参数获取（用于文件下载等场景）
+        String paramToken = request.getParameter("token");
+        if (paramToken != null && !paramToken.isEmpty()) {
+            return paramToken;
         }
         
         return null;

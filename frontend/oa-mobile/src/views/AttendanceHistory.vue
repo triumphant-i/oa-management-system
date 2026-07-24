@@ -21,9 +21,9 @@
         <span class="stat-num">{{ getCount('签退') }}</span>
         <span class="stat-label">签退</span>
       </div>
-      <div class="stat-card" :class="{ active: filterType === '补卡' }" @click="filterType = '补卡'">
-        <span class="stat-num">{{ getCount('补卡') }}</span>
-        <span class="stat-label">补卡</span>
+      <div class="stat-card" :class="{ active: filterType === '加班' }" @click="filterType = '加班'">
+        <span class="stat-num">{{ getCount('加班') }}</span>
+        <span class="stat-label">加班</span>
       </div>
     </div>
 
@@ -31,13 +31,17 @@
       <div class="list-item" v-for="(item, index) in filteredList" :key="index">
         <div class="item-header">
           <span class="item-type">{{ item.type }}</span>
-          <span class="item-status" :class="item.status === '正常' ? 'status-normal' : 'status-abnormal'">
+          <span class="item-status" :class="getStatusClass(item)">
             {{ item.status }}
           </span>
         </div>
         <div class="item-body">
           <span class="item-time">{{ item.time }}</span>
           <span class="item-date">{{ item.date }}</span>
+        </div>
+        <div class="item-overtime-info" v-if="item.type === '加班'">
+          <span class="overtime-type">{{ item.overtimeType }}</span>
+          <span class="overtime-duration" v-if="item.duration">时长 {{ item.duration }}h</span>
         </div>
       </div>
       <div class="empty-state" v-if="filteredList.length === 0">
@@ -65,6 +69,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { getMyRecords } from '@/api/attendance'
+import { getOvertimeList } from '@/api/overtime'
 
 const router = useRouter()
 
@@ -78,10 +83,12 @@ const historyList = ref([])
 const fetchHistory = async () => {
   if (!employeeId.value) return
   try {
+    const formattedRecords = []
+    
+    // 获取正常考勤记录
     const res = await getMyRecords(employeeId.value)
     if (res.code === 0 && res.data) {
       const records = Array.isArray(res.data) ? res.data : []
-      const formattedRecords = []
       records.forEach(r => {
         if (r.checkInTime) {
           formattedRecords.push({
@@ -102,8 +109,31 @@ const fetchHistory = async () => {
           })
         }
       })
-      historyList.value = formattedRecords.sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time))
     }
+
+    // 获取加班记录（近30天）
+    const today = new Date()
+    const startDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+    const startDateStr = startDate.toISOString().split('T')[0]
+    const endDateStr = today.toISOString().split('T')[0]
+    
+    const overtimeRes = await getOvertimeList(startDateStr, endDateStr)
+    if (overtimeRes.code === 0 && overtimeRes.data) {
+      const overtimeRecords = Array.isArray(overtimeRes.data) ? overtimeRes.data : []
+      overtimeRecords.forEach(r => {
+        formattedRecords.push({
+          id: r.id + 10000,
+          type: '加班',
+          time: r.startTime ? new Date(r.startTime).toLocaleTimeString('zh-CN') : '',
+          date: r.date,
+          status: r.status || '待审核',
+          overtimeType: r.overtimeType,
+          duration: r.duration
+        })
+      })
+    }
+
+    historyList.value = formattedRecords.sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time))
   } catch (error) {
     console.error('获取考勤记录失败', error)
   }
@@ -111,6 +141,17 @@ const fetchHistory = async () => {
 
 const getCount = (type) => {
   return historyList.value.filter(item => item.type === type).length
+}
+
+const getStatusClass = (item) => {
+  if (item.type === '加班') {
+    if (item.status === '已通过') return 'status-approved'
+    if (item.status === '已拒绝') return 'status-rejected'
+    return 'status-pending'
+  }
+  if (item.status === '正常') return 'status-normal'
+  if (item.status === '迟到' || item.status === '早退') return 'status-abnormal'
+  return 'status-pending'
 }
 
 const filteredList = computed(() => {
@@ -219,6 +260,9 @@ onMounted(() => {
 }
 .status-normal { color: #00b894; background: #e8f8f0; }
 .status-abnormal { color: #ff6b35; background: #fff0e8; }
+.status-pending { color: #fdcb6e; background: #fffbeb; }
+.status-approved { color: #00b894; background: #e8f8f0; }
+.status-rejected { color: #ff6b35; background: #fff0e8; }
 .item-body {
   display: flex;
   justify-content: space-between;
@@ -226,6 +270,16 @@ onMounted(() => {
 }
 .item-time { font-size: 14px; color: #333; }
 .item-date { font-size: 13px; color: #999; }
+
+.item-overtime-info {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #eee;
+}
+.overtime-type { font-size: 12px; color: #666; }
+.overtime-duration { font-size: 12px; color: #ff6b35; font-weight: 500; }
 
 .empty-state {
   text-align: center;

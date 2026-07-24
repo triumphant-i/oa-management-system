@@ -2,8 +2,10 @@ package com.southwind.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.southwind.entity.Meeting;
 import com.southwind.entity.MeetingRoom;
 import com.southwind.service.MeetingRoomService;
+import com.southwind.service.MeetingService;
 import com.southwind.util.ResultVOUtil;
 import com.southwind.vo.PageVO;
 import com.southwind.vo.ResultVO;
@@ -22,6 +24,9 @@ public class MeetingRoomController {
 
     @Autowired
     private MeetingRoomService meetingRoomService;
+
+    @Autowired
+    private MeetingService meetingService;
 
     /**
      * 添加会议室
@@ -96,6 +101,16 @@ public class MeetingRoomController {
      */
     @DeleteMapping("/deleteById/{id}")
     public ResultVO deleteById(@PathVariable("id") Integer id) {
+        // 检查该会议室是否存在未结束的会议预约
+        QueryWrapper<Meeting> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("room_id", id);
+        queryWrapper.ne("status", "已取消");
+        queryWrapper.ne("status", "已结束");
+        long count = meetingService.count(queryWrapper);
+        if (count > 0) {
+            return ResultVOUtil.fail("该会议室下还有未结束的会议预约，无法删除");
+        }
+        
         boolean delete = meetingRoomService.removeById(id);
         if (!delete) return ResultVOUtil.fail("删除失败");
         return ResultVOUtil.success(null);
